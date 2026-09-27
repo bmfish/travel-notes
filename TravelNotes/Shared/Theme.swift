@@ -76,6 +76,7 @@ struct TicketInfo {
     var kind: String?
     var photoCount: Int = 0
     var hasNote: Bool = false
+    var passenger: String?
 
     init(entry: TicketEntry) {
         trainNo = entry.trainNo
@@ -91,6 +92,7 @@ struct TicketInfo {
         kind = entry.kindDescription
         photoCount = entry.photoFileNames.count
         hasNote = entry.note?.isEmpty == false
+        passenger = entry.passenger
     }
 
     init(trainNo: String? = nil, from: String? = nil, to: String? = nil,
@@ -115,6 +117,19 @@ struct TicketInfo {
         return p.truncatingRemainder(dividingBy: 1) == 0
             ? String(format: "¥%.0f", p)
             : String(format: "¥%.1f", p)
+    }
+
+    /// 磁卡票版式的完整票价:¥471.00元
+    var priceFullText: String {
+        guard let p = price, p > 0 else { return "¥0.00元" }
+        return String(format: "¥%.2f元", p)
+    }
+
+    /// 磁卡票底部的长票号(装饰,由乘车日期推导)
+    var longSerialText: String {
+        let day = Calendar.current.ordinality(of: .day, in: .era, for: date) ?? 0
+        let digits = String(format: "%012d", (day * 31337) % 1_000_000_000_000 % 1_000_000_000_000)
+        return "203\(String(digits.suffix(10)))\(serialText)"
     }
 
     var trainNoText: String {

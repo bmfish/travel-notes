@@ -296,6 +296,7 @@ final class MailSyncEngine: ObservableObject {
                 price: candidate.price,
                 skin: .blue
             )
+            entry.passenger = candidate.passenger
             context.insert(entry)
             candidate.imported = true
             count += 1

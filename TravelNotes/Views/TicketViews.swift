@@ -72,122 +72,118 @@ struct FakeQR: View {
     }
 }
 
-// MARK: - 蓝色磁卡票(2007–2020 风格)
+// MARK: - 蓝色磁卡票(还原 2007–2020 实票版式)
 
 struct BlueTicketFace: View {
     let info: TicketInfo
     var punchColor: Color = Theme.paperBackground
 
+    private var navy: Color { Color(red: 0.10, green: 0.24, blue: 0.45) }
+    private var serialRed: Color { Color(red: 0.80, green: 0.20, blue: 0.16) }
+
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 8) {
+            // 票号 + 局名
             HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 2) {
+                Text(info.serialText)
+                    .font(.system(size: 15, weight: .heavy, design: .monospaced))
+                    .foregroundColor(serialRed)
+                Spacer()
+                HStack(spacing: 5) {
+                    ZStack {
+                        Circle().fill(navy)
+                        Circle().fill(Color.white).frame(width: 9, height: 9)
+                    }
+                    .frame(width: 16, height: 16)
                     Text("中国铁路")
-                        .font(.system(size: 16, weight: .heavy))
-                        .foregroundColor(Theme.railBlue)
-                    Text("CHINA RAILWAY")
-                        .font(.system(size: 7.5, weight: .semibold, design: .monospaced))
-                        .tracking(2.5)
-                        .foregroundColor(Theme.railBlue.opacity(0.8))
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(navy)
+                }
+            }
+
+            // 站名 + 车次线
+            HStack(alignment: .center, spacing: 10) {
+                Text(info.stationFrom)
+                    .font(.system(size: 26, weight: .heavy))
+                    .foregroundColor(navy)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+                HStack(spacing: 5) {
+                    Rectangle().fill(navy.opacity(0.75)).frame(height: 1.5)
+                    Text(info.trainNoLine)
+                        .font(.system(size: 13, weight: .heavy))
+                        .foregroundColor(navy)
+                        .fixedSize()
+                    Rectangle().fill(navy.opacity(0.75)).frame(height: 1.5)
+                }
+                Text(info.stationTo)
+                    .font(.system(size: 26, weight: .heavy))
+                    .foregroundColor(navy)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+            }
+
+            // 日期时刻 + 车厢座位
+            HStack(alignment: .firstTextBaseline) {
+                HStack(alignment: .firstTextBaseline, spacing: 2) {
+                    Text(Fmt.cnDate.string(from: info.date))
+                        .font(.system(size: 13, weight: .semibold))
+                    if let t = info.departTime {
+                        Text(Fmt.clock.string(from: t))
+                            .font(.system(size: 13, weight: .heavy))
+                        Text("开").font(.system(size: 10))
+                    }
+                }
+                .foregroundColor(navy)
+                Spacer()
+                Text(info.seatLine)
+                    .font(.system(size: 15, weight: .heavy, design: .monospaced))
+                    .foregroundColor(navy)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+            }
+
+            // 票价 + 席别
+            HStack(alignment: .firstTextBaseline) {
+                Text(info.priceFullText)
+                    .font(.system(size: 14, weight: .heavy))
+                    .foregroundColor(navy)
+                Spacer()
+                Text(info.seatClass ?? "新空调硬座")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(navy)
+            }
+
+            // 限乘 + 乘车人 + 票号 + 二维码
+            HStack(alignment: .bottom) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("限乘当日当次车")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(navy)
+                    if let p = info.passenger, !p.isEmpty {
+                        Text(p)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(navy)
+                    }
+                    Text(info.longSerialText)
+                        .font(.system(size: 8, design: .monospaced))
+                        .foregroundColor(navy.opacity(0.7))
                 }
                 Spacer()
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text(info.trainNoLine)
-                        .font(.system(size: 14, weight: .heavy))
-                        .foregroundColor(Theme.ticketInk)
-                    Text(info.kind ?? "电子客票")
-                        .font(.system(size: 8, weight: .medium))
-                        .foregroundColor(Theme.ticketGray)
-                }
+                FakeQR(size: 58, color: navy)
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 10)
-            .padding(.bottom, 6)
-
-            Rectangle()
-                .fill(Theme.railBlue.opacity(0.25))
-                .frame(height: 0.8)
-
-            HStack(spacing: 0) {
-                VStack(alignment: .leading, spacing: 9) {
-                    HStack(alignment: .center, spacing: 6) {
-                        station(info.from)
-                        VStack(spacing: 1) {
-                            Text(info.trainNoText)
-                                .font(.system(size: 9, weight: .semibold))
-                                .foregroundColor(Theme.railBlue)
-                            Image(systemName: "arrow.right")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundColor(Theme.railBlue)
-                        }
-                        station(info.to)
-                    }
-                    HStack(alignment: .firstTextBaseline, spacing: 4) {
-                        Text(Fmt.cnDate.string(from: info.date))
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(Theme.ticketInk)
-                        if let t = info.departTime {
-                            Text(Fmt.clock.string(from: t))
-                                .font(.system(size: 13, weight: .heavy))
-                                .foregroundColor(Theme.railBlue)
-                            Text("开").font(.system(size: 9)).foregroundColor(Theme.ticketGray)
-                        }
-                    }
-                    HStack(spacing: 6) {
-                        if let sc = info.seatClass {
-                            Text(sc).font(.system(size: 9, weight: .medium)).foregroundColor(Theme.railBlue)
-                        }
-                        if let kind = info.kind {
-                            Text(kind).font(.system(size: 9)).foregroundColor(Theme.ticketGray)
-                        }
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-
-                TicketTear(lineColor: Theme.ticketGray.opacity(0.5), punchColor: punchColor)
-                    .frame(width: 16)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(info.seatClass ?? "乘车凭证")
-                        .font(.system(size: 8.5))
-                        .foregroundColor(Theme.ticketGray)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                    Text(info.priceText ?? "—")
-                        .font(.system(size: 15, weight: .heavy))
-                        .foregroundColor(Theme.railBlue)
-                    Text(info.seatLine)
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .foregroundColor(Theme.ticketInk)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                    Spacer(minLength: 4)
-                    FakeQR(size: 34, color: Theme.ticketInk.opacity(0.75))
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-            }
-
-            ZStack(alignment: .leading) {
-                Rectangle().fill(Color.black)
-                DashedHLine()
-                    .stroke(Color.white.opacity(0.22), style: StrokeStyle(lineWidth: 2, dash: [6, 5]))
-            }
-            .frame(height: 12)
         }
-        .background(Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(white: 0.82), lineWidth: 0.8))
-    }
-
-    private func station(_ s: String?) -> some View {
-        Text(TicketInfo.stationText(s))
-            .font(.system(size: 20, weight: .heavy))
-            .foregroundColor(Theme.ticketInk)
-            .lineLimit(1)
-            .minimumScaleFactor(0.5)
+        .padding(16)
+        .background(
+            LinearGradient(colors: [Color(red: 0.83, green: 0.90, blue: 0.97),
+                                    Color(red: 0.62, green: 0.79, blue: 0.94)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.white.opacity(0.85), lineWidth: 1.5)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }
 

@@ -69,8 +69,32 @@ final class StationDirectory {
 }
 
 enum MileageEstimator {
-    /// 球面直线距离 × 1.25 作为铁路里程粗估
+    /// 常用线路的实际铁路里程(公里,城市对,键为排序后的"甲|乙")
+    /// 数据来源:12306 票面里程与公开时刻表,未收录的线路退回直线估算
+    static let railCityPairs: [String: Double] = {
+        let raw: [(String, String, Double)] = [
+            ("上海", "郑州", 986), ("上海", "开封", 1040), ("上海", "阜阳", 648),
+            ("上海", "北京", 1318), ("上海", "杭州", 175), ("上海", "苏州", 84),
+            ("上海", "南京", 300), ("上海", "合肥", 455), ("上海", "武汉", 814),
+            ("上海", "项城", 730), ("上海", "洛阳", 1105), ("上海", "麻城", 590),
+            ("北京", "邯郸", 440), ("郑州", "太原", 432), ("郑州", "开封", 60),
+            ("郑州", "淮阳", 170), ("郑州", "阜阳", 213), ("郑州", "洛阳", 118),
+            ("阜阳", "淮阳", 55), ("阜阳", "项城", 80)
+        ]
+        var map: [String: Double] = [:]
+        for (a, b, km) in raw {
+            let key = [a, b].sorted().joined(separator: "|")
+            map[key] = km
+        }
+        return map
+    }()
+
+    /// 实际铁路里程优先,未收录线路按球面直线 × 1.25 估算
     static func kmBetween(_ a: Station, _ b: Station) -> Double {
+        let cityKey = [a.c, b.c].sorted().joined(separator: "|")
+        if let km = railCityPairs[cityKey] {
+            return km
+        }
         func rad(_ d: Double) -> Double { d * .pi / 180 }
         let dLat = rad(b.lat - a.lat)
         let dLng = rad(b.lng - a.lng)

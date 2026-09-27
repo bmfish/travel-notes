@@ -47,6 +47,8 @@ final class TicketEntry {
     var seat: String?
     var seatClass: String?
     var price: Double?
+    /// 乘车人姓名(邮件同步时带入)
+    var passenger: String?
     var skinRaw: String = TicketSkin.blue.rawValue
     /// 日记正文
     var note: String?
