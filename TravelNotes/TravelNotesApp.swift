@@ -1,0 +1,63 @@
+import SwiftUI
+import SwiftData
+
+@main
+struct TravelNotesApp: App {
+    @State private var tabSelection: Int = {
+        let args = ProcessInfo.processInfo.arguments
+        if args.contains("-StatsTab") { return 3 }
+        if args.contains("-SyncTab") { return 2 }
+        if args.contains("-FootprintTab") { return 1 }
+        return 0
+    }()
+
+    var body: some Scene {
+        WindowGroup {
+            TabView(selection: $tabSelection) {
+                HomeView()
+                    .tag(0)
+                    .tabItem { Label("票根", systemImage: "ticket") }
+                FootprintView()
+                    .tag(1)
+                    .tabItem { Label("足迹", systemImage: "map") }
+                SyncView()
+                    .tag(2)
+                    .tabItem { Label("同步", systemImage: "envelope.arrow.triangle.branch") }
+                StatsView()
+                    .tag(3)
+                    .tabItem { Label("统计", systemImage: "chart.bar.fill") }
+            }
+            .modifier(AutoSyncOnActive())
+            .modelContainer(for: [TicketEntry.self, MailCandidate.self])
+            .task { SnapshotSupport.runIfNeeded() }
+            .task { await MailSyncEngine.runSelfTestIfNeeded() }
+        }
+    }
+}
+
+/// 回到前台时自动增量同步
+struct AutoSyncOnActive: ViewModifier {
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.scenePhase) private var scenePhase
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear { trigger() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { trigger() }
+            }
+    }
+
+    private func trigger() {
+        // 调试钩子:-MailUser/-MailPass/-MailOwner 预置账号后自动同步
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "-MailUser"), i + 1 < args.count,
+           let j = args.firstIndex(of: "-MailPass"), j + 1 < args.count {
+            MailSyncEngine.shared.saveAccount(email: args[i + 1], authCode: args[j + 1])
+        }
+        if let k = args.firstIndex(of: "-MailOwner"), k + 1 < args.count {
+            UserDefaults.standard.set(args[k + 1], forKey: "mail.owner")
+        }
+        MailSyncEngine.shared.autoSyncIfNeeded(context: modelContext)
+    }
+}
