@@ -33,3 +33,5 @@ targets:
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         ITSAppUsesNonExemptEncryption: false
+        NSCalendarsWriteOnlyAccessUsageDescription: "把车票行程添加到你的日历,出发前 2 小时提醒"
+        NSCalendarsFullAccessUsageDescription: "把车票行程添加到你的日历,出发前 2 小时提醒"

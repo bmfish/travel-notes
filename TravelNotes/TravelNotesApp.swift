@@ -35,6 +35,7 @@ struct TravelNotesApp: App {
             .modelContainer(for: [TicketEntry.self, MailCandidate.self])
             .task { SnapshotSupport.runIfNeeded() }
             .task { await MailSyncEngine.runSelfTestIfNeeded() }
+            .task { TripCalendar.runSelfTestIfNeeded() }
         }
     }
 }

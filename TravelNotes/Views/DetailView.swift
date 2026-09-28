@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UIKit
 
 struct DetailView: View {
     let entry: TicketEntry
@@ -10,6 +11,8 @@ struct DetailView: View {
     @State private var showingEdit = false
     @State private var confirmingDelete = false
     @State private var photoViewer: PhotoViewerSheet?
+    @State private var toastMessage: String?
+    @State private var shareFile: ShareFile?
 
     var body: some View {
         ScrollView {
@@ -38,6 +41,27 @@ struct DetailView: View {
         .background(Theme.paperBackground.ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button {
+                        addToCalendar()
+                    } label: {
+                        Label("添加到日历", systemImage: "calendar.badge.plus")
+                    }
+                    Button {
+                        exportICS()
+                    } label: {
+                        Label("导出日历文件(.ics)", systemImage: "square.and.arrow.up")
+                    }
+                    Button {
+                        copyTripInfo()
+                    } label: {
+                        Label("复制行程信息", systemImage: "doc.on.doc")
+                    }
+                } label: {
+                    Image(systemName: "plus")
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button {
@@ -70,6 +94,56 @@ struct DetailView: View {
         }
         .fullScreenCover(item: $photoViewer) { viewer in
             PhotoViewer(names: viewer.names, startIndex: viewer.startIndex)
+        }
+        .alert("高铁笔记", isPresented: Binding(
+            get: { toastMessage != nil },
+            set: { if !$0 { toastMessage = nil } }
+        )) {
+            Button("好", role: .cancel) {}
+        } message: {
+            Text(toastMessage ?? "")
+        }
+        .sheet(item: $shareFile) { file in
+            ActivityView(activityItems: [file.url])
+        }
+    }
+
+    // MARK: 加日历/导出
+
+    private func makePlan() async -> TripPlan {
+        let arrive = await TripCalendar.arrivalTime(for: entry)
+        return TripCalendar.plan(for: entry, arriveText: arrive)
+    }
+
+    private func addToCalendar() {
+        Task {
+            let plan = await makePlan()
+            do {
+                try await TripCalendar.addToCalendar(plan)
+                toastMessage = "已添加到日历:\(plan.title),提前 2 小时提醒"
+            } catch {
+                toastMessage = "添加失败:\(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func exportICS() {
+        Task {
+            let plan = await makePlan()
+            do {
+                let url = try TripCalendar.icsFile(for: plan)
+                shareFile = ShareFile(url: url)
+            } catch {
+                toastMessage = "导出失败:\(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func copyTripInfo() {
+        Task {
+            let plan = await makePlan()
+            UIPasteboard.general.string = TripCalendar.copyText(for: entry, plan: plan)
+            toastMessage = "行程信息已复制"
         }
     }
 
@@ -111,6 +185,21 @@ struct DetailView: View {
         .padding(16)
         .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.8)))
     }
+}
+
+// MARK: - 分享
+
+private struct ShareFile: Identifiable {
+    let id = UUID()
+    let url: URL
+}
+
+private struct ActivityView: UIViewControllerRepresentable {
+    let activityItems: [Any]
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+    }
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 // MARK: - 经停时刻表
