@@ -14,6 +14,7 @@ struct SyncView: View {
     @State private var lastShownEmail = ""
     @State private var confirmingImportAll = false
     @State private var confirmingFullSync = false
+    @FocusState private var fieldFocused: Bool
 
     private var pending: [MailCandidate] {
         candidates.filter { !$0.imported }
@@ -22,10 +23,14 @@ struct SyncView: View {
     var body: some View {
         NavigationStack {
             Form {
+                if engine.running {
+                    statusBanner
+                }
                 accountSection
                 syncSection
                 candidateSection
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("邮件同步")
             .navigationBarTitleDisplayMode(.inline)
             .onAppear {
@@ -44,6 +49,20 @@ struct SyncView: View {
         }
     }
 
+    // MARK: 顶部同步进度(常驻,避免被键盘/列表遮挡)
+
+    private var statusBanner: some View {
+        Section {
+            HStack(spacing: 10) {
+                ProgressView()
+                Text(engine.statusText)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(Theme.railRed)
+                Spacer()
+            }
+        }
+    }
+
     // MARK: 账号
 
     private var accountSection: some View {
@@ -52,8 +71,11 @@ struct SyncView: View {
                 .keyboardType(.emailAddress)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
+                .focused($fieldFocused)
             SecureField("授权码(16 位)", text: $authCode)
+                .focused($fieldFocused)
             TextField("乘车人姓名(只导入本人,如 张三)", text: $ownerName)
+                .focused($fieldFocused)
         } header: {
             Text("QQ 邮箱账号")
         } footer: {
@@ -65,14 +87,14 @@ struct SyncView: View {
 
     private var syncSection: some View {
         Section {
-            HStack {
-                if engine.running {
-                    ProgressView().padding(.trailing, 8)
+            if !engine.running {
+                HStack {
+                    Text(engine.statusText)
+                        .foregroundColor(.secondary)
                 }
-                Text(engine.statusText)
-                    .foregroundColor(.secondary)
             }
             Button {
+                fieldFocused = false
                 saveAccountIfNeeded()
                 Task { await engine.sync(context: modelContext) }
             } label: {
@@ -83,6 +105,7 @@ struct SyncView: View {
             }
             .disabled(engine.running || email.isEmpty || authCode.isEmpty)
             Button {
+                fieldFocused = false
                 confirmingFullSync = true
             } label: {
                 HStack {
@@ -93,6 +116,7 @@ struct SyncView: View {
             .disabled(engine.running || email.isEmpty || authCode.isEmpty)
             .confirmationDialog("全量重新同步?", isPresented: $confirmingFullSync, titleVisibility: .visible) {
                 Button("全量重跑") {
+                    fieldFocused = false
                     saveAccountIfNeeded()
                     Task { await engine.sync(context: modelContext, fullHistory: true) }
                 }
