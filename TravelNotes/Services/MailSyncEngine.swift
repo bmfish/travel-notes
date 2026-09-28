@@ -53,11 +53,14 @@ final class MailSyncEngine: ObservableObject {
     static func trace(_ line: String) {
         guard ProcessInfo.processInfo.arguments.contains("-MailUser") else { return }
         let stamped = "\(DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)) \(line)\n"
-        if let handle = FileHandle(forWritingAtPath: "/tmp/tn_trace.log") {
+        // 沙盒里绝对 /tmp 不可写,落到临时目录
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("tn_trace.log")
+        if let handle = FileHandle(forWritingAtPath: url.path) {
+            handle.seekToEndOfFile()
             handle.write(Data(stamped.utf8))
             try? handle.close()
         } else {
-            try? stamped.write(to: URL(fileURLWithPath: "/tmp/tn_trace.log"), atomically: true, encoding: .utf8)
+            try? stamped.write(to: url, atomically: true, encoding: .utf8)
         }
     }
 
@@ -76,16 +79,35 @@ final class MailSyncEngine: ObservableObject {
         defer { running = false }
         Self.trace("sync: begin")
         do {
-            statusText = "连接 \(Self.imapHost)…"
+            let server = Self.server()
+            statusText = "连接 \(server.host)…"
             Self.trace("sync: connecting")
-            let client = IMAPClient()
-            try await client.connect(host: Self.imapHost, port: Self.imapPort)
+            var client = try await Self.openSession(email: email, authCode: authCode)
             defer { client.disconnect() }
+            var currentFolder: String?
+            var reconnects = 0
 
-            statusText = "登录邮箱…"
-            // QQ 邮箱要求在登录前发送 ID 命令表明客户端身份
-            _ = try await client.command("ID (\"name\" \"TrainTicketDiary\" \"version\" \"1.0\")")
-            _ = try await client.command("LOGIN \"\(Self.escape(email))\" \"\(Self.escape(authCode))\"")
+            func ensureSelected(_ c: IMAPClient, _ folder: String) async throws {
+                guard currentFolder != folder else { return }
+                _ = try await c.command("SELECT \"\(folder)\"")
+                currentFolder = folder
+            }
+
+            /// 网络闪断/服务器掐线时自动重连续传(全量同步传输量大,移动端尤其容易被掐)
+            func resilient<T>(_ what: String, _ body: (IMAPClient) async throws -> T) async throws -> T {
+                while true {
+                    do { return try await body(client) }
+                    catch {
+                        guard Self.isTransient(error), reconnects < 6 else { throw error }
+                        reconnects += 1
+                        Self.trace("reconnect #\(reconnects) after \(what): \(error)")
+                        statusText = "连接中断,自动重连…(\(reconnects)/6)"
+                        client.disconnect()
+                        currentFolder = nil
+                        client = try await Self.openSession(email: email, authCode: authCode)
+                    }
+                }
+            }
 
             statusText = "打开邮箱…"
             var known = Self.existingMessageIDs(context: context)
@@ -104,7 +126,7 @@ final class MailSyncEngine: ObservableObject {
             var mails: [FetchedMail] = []
             var doneCount = 0
             var folders = ["INBOX"]
-            let listRecords = try await client.command("LIST \"\" \"*\"")
+            let listRecords = try await resilient("list") { c in try await c.command("LIST \"\" \"*\"") }
             let listRegex = try? NSRegularExpression(pattern: "\"([^\"]+)\"\\s*$")
             for record in listRecords where record.text.hasPrefix("* LIST") {
                 guard !record.text.contains("\\NoSelect"),
@@ -127,18 +149,24 @@ final class MailSyncEngine: ObservableObject {
 
             for folder in folders {
                 statusText = "扫描 \(folder == "INBOX" ? "收件箱" : "12306 文件夹")…"
+                let uids: [String]
                 do {
-                    _ = try await client.command("SELECT \"\(folder)\"")
+                    let searchRecords = try await resilient("search \(folder)") { c in
+                        try await ensureSelected(c, folder)
+                        return try await c.command("UID SEARCH SINCE \(since) FROM \"12306\"")
+                    }
+                    uids = Self.parseSearchRecords(searchRecords)
                 } catch {
                     Self.trace("select \(folder) failed")
                     continue
                 }
-                let searchRecords = try await client.command("UID SEARCH SINCE \(since) FROM \"12306\"")
-                let uids = Self.parseSearchRecords(searchRecords)
                 guard !uids.isEmpty else { continue }
                 for chunk in Self.chunked(uids, size: 20) {
                     let query = chunk.joined(separator: ",")
-                    let records = try await client.command("UID FETCH \(query) (BODY.PEEK[])", timeout: 90)
+                    let records = try await resilient("fetch \(folder)") { c in
+                        try await ensureSelected(c, folder)
+                        return try await c.command("UID FETCH \(query) (BODY.PEEK[])", timeout: 90)
+                    }
                     doneCount += chunk.count
                     statusText = "拉取邮件 \(doneCount)…"
                     Self.trace("batch \(folder) \(doneCount)")
@@ -315,6 +343,46 @@ final class MailSyncEngine: ObservableObject {
     private static func value(of key: String, in args: [String]) -> String? {
         guard let i = args.firstIndex(of: key), i + 1 < args.count else { return nil }
         return args[i + 1]
+    }
+
+    /// 调试:-MailHost/-MailPort 覆盖服务器(配合 scripts/mock_imap.py 本地验证);127.0.0.1 不走 TLS
+    private static func server() -> (host: String, port: UInt16, tls: Bool) {
+        let args = ProcessInfo.processInfo.arguments
+        let host = value(of: "-MailHost", in: args) ?? imapHost
+        let port = UInt16(value(of: "-MailPort", in: args) ?? "") ?? imapPort
+        return (host, port, host != "127.0.0.1" && port != 8025)
+    }
+
+    /// 建立连接 + ID + LOGIN;连接失败自动重试 3 次(移动端网络闪断常见)
+    private static func openSession(email: String, authCode: String) async throws -> IMAPClient {
+        let server = server()
+        var lastError: Error = IMAPError.disconnected
+        for attempt in 1...3 {
+            let client = IMAPClient()
+            do {
+                trace("connect \(server.host):\(server.port) attempt \(attempt)")
+                try await client.connect(host: server.host, port: server.port, useTLS: server.tls)
+                // QQ 邮箱要求在登录前发送 ID 命令表明客户端身份
+                _ = try await client.command("ID (\"name\" \"TrainTicketDiary\" \"version\" \"1.0\")")
+                _ = try await client.command("LOGIN \"\(escape(email))\" \"\(escape(authCode))\"")
+                return client
+            } catch {
+                lastError = error
+                client.disconnect()
+                if let e = error as? IMAPError, case .bad = e { throw error } // 账号被拒,重试无意义
+                if attempt < 3 { try? await Task.sleep(nanoseconds: 2_000_000_000) }
+            }
+        }
+        throw lastError
+    }
+
+    /// 网络/连接类错误可以重连续传;协议拒绝等错误重试无意义
+    private static func isTransient(_ error: Error) -> Bool {
+        guard let e = error as? IMAPError else { return true }
+        switch e {
+        case .connection, .disconnected, .timeout, .notConnected: return true
+        case .bad, .parse: return false
+        }
     }
 
     // MARK: 工具

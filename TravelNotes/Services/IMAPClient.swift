@@ -12,7 +12,7 @@ enum IMAPError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .notConnected: return "尚未连接服务器"
-        case .connection(let e): return "连接错误:\(e.localizedDescription)"
+        case .connection: return "网络连接中断,请检查网络后重试"
         case .timeout: return "连接超时"
         case .disconnected: return "连接已断开"
         case .bad(let line): return "服务器拒绝:\(line)"
@@ -50,17 +50,27 @@ final class IMAPClient: @unchecked Sendable {
         connection = conn
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
             var resumed = false
+            // 连接建立也要有超时:网络异常时 NWConnection 可能一直停在 preparing
+            let timer = makeTimeoutTimer(30) {
+                guard !resumed else { return }
+                resumed = true
+                conn.cancel()
+                cont.resume(throwing: IMAPError.timeout)
+            }
             conn.stateUpdateHandler = { state in
                 guard !resumed else { return }
                 switch state {
                 case .ready:
                     resumed = true
+                    timer.cancel()
                     cont.resume()
                 case .failed(let error):
                     resumed = true
+                    timer.cancel()
                     cont.resume(throwing: IMAPError.connection(error))
                 case .cancelled:
                     resumed = true
+                    timer.cancel()
                     cont.resume(throwing: IMAPError.disconnected)
                 default:
                     break

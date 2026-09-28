@@ -2,7 +2,14 @@
 """本地 mock IMAP 服务器:验证 App 的 IMAP 客户端端到端流程(无 TLS,仅本机测试)"""
 import socket
 import base64
+import os
+import struct
 import threading
+
+# ABORT_FIRST_FETCH=1:第一条 UID FETCH 时用 RST 掐断连接,模拟移动网络被掐线,
+# 用于验证客户端的自动重连续传
+ABORT_FIRST_FETCH = os.environ.get("ABORT_FIRST_FETCH") == "1"
+_abort_done = False
 
 HTML = """<html><body>
 <div>您已成功购买以下车票:</div>
@@ -61,6 +68,13 @@ def handle(conn):
             send("* SEARCH 101\r\n")
             send(f"{tag} OK SEARCH completed\r\n")
         elif cmd.startswith("UID FETCH"):
+            global _abort_done
+            if ABORT_FIRST_FETCH and not _abort_done:
+                _abort_done = True
+                print("!! aborting connection mid-FETCH (simulated)", flush=True)
+                conn.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+                conn.close()
+                return
             uid = parts[2]
             send(f"* 1 FETCH (UID {uid} BODY[] {{{len(RAW)}}}\r\n")
             conn.sendall(RAW.encode())
@@ -78,7 +92,7 @@ def handle(conn):
 def main():
     s = socket.socket()
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    s.bind(("127.0.0.1", 8025))
+    s.bind(("0.0.0.0", 8025))
     s.listen(4)
     print("mock imap listening on 127.0.0.1:8025", flush=True)
     while True:
