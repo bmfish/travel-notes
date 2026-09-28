@@ -27,7 +27,7 @@ targets:
     info:
       path: TravelNotes/Info.plist
       properties:
-        CFBundleDisplayName: 火车票日记
+        CFBundleDisplayName: 高铁笔记
         UILaunchScreen:
           UIColorName: LaunchBackground
         UISupportedInterfaceOrientations:

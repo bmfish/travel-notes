@@ -1,4 +1,4 @@
-# 火车票日记 (TravelNotes)
+# 高铁笔记 (TravelNotes)
 
 > 每张车票 = 一页日记。iOS 原生个人 App:SwiftUI + SwiftData,无第三方依赖、无后端,数据全存手机本地。
 

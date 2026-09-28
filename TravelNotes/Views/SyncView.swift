@@ -13,6 +13,7 @@ struct SyncView: View {
     @State private var selectedCandidate: MailCandidate?
     @State private var lastShownEmail = ""
     @State private var confirmingImportAll = false
+    @State private var confirmingFullSync = false
 
     private var pending: [MailCandidate] {
         candidates.filter { !$0.imported }
@@ -81,6 +82,24 @@ struct SyncView: View {
                 }
             }
             .disabled(engine.running || email.isEmpty || authCode.isEmpty)
+            Button {
+                confirmingFullSync = true
+            } label: {
+                HStack {
+                    Image(systemName: "arrow.counterclockwise.circle")
+                    Text("全量重新同步")
+                }
+            }
+            .disabled(engine.running || email.isEmpty || authCode.isEmpty)
+            .confirmationDialog("全量重新同步?", isPresented: $confirmingFullSync, titleVisibility: .visible) {
+                Button("全量重跑") {
+                    saveAccountIfNeeded()
+                    Task { await engine.sync(context: modelContext, fullHistory: true) }
+                }
+                Button("取消", role: .cancel) {}
+            } message: {
+                Text("会重新拉取全部历史邮件,并按最新解析规则补数据、清掉改签/退票产生的错误票根,大约需要几分钟。")
+            }
             Button {
                 confirmingImportAll = true
             } label: {

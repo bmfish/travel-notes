@@ -78,7 +78,7 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Text("🚄").font(.system(size: 26))
-                Text("我的火车票日记")
+                Text("我的高铁笔记")
                     .font(.system(size: 25, weight: .heavy, design: .serif))
                     .foregroundColor(Theme.ticketInk)
             }
