@@ -5,9 +5,10 @@ import SwiftData
 struct TravelNotesApp: App {
     @State private var tabSelection: Int = {
         let args = ProcessInfo.processInfo.arguments
-        if args.contains("-StatsTab") { return 3 }
-        if args.contains("-SyncTab") { return 2 }
-        if args.contains("-FootprintTab") { return 1 }
+        if args.contains("-StatsTab") { return 4 }
+        if args.contains("-SyncTab") { return 3 }
+        if args.contains("-FootprintTab") { return 2 }
+        if args.contains("-TripTab") { return 1 }
         return 0
     }()
 
@@ -17,14 +18,17 @@ struct TravelNotesApp: App {
                 HomeView()
                     .tag(0)
                     .tabItem { Label("票根", systemImage: "ticket") }
-                FootprintView()
+                TripView()
                     .tag(1)
+                    .tabItem { Label("行程", systemImage: "flag.checkered") }
+                FootprintView()
+                    .tag(2)
                     .tabItem { Label("足迹", systemImage: "map") }
                 SyncView()
-                    .tag(2)
+                    .tag(3)
                     .tabItem { Label("同步", systemImage: "envelope.arrow.triangle.branch") }
                 StatsView()
-                    .tag(3)
+                    .tag(4)
                     .tabItem { Label("统计", systemImage: "chart.bar.fill") }
             }
             .modifier(AutoSyncOnActive())

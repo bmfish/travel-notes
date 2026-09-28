@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 import Charts
 
-/// 「统计」页:总览、年度趋势、线路/城市排行、车型席别分布、之最
+/// 「统计」页:渐变总览、年度趋势、排行、环形分布、之最徽章
 struct StatsView: View {
     @Query(sort: \TicketEntry.date, order: .reverse) private var entries: [TicketEntry]
 
@@ -13,12 +13,12 @@ struct StatsView: View {
                     if entries.isEmpty {
                         emptyView
                     } else {
-                        overviewCard
+                        heroCard
                         card("年度乘车次数") { yearChart }
                         card("常走的线路 TOP5") { routeList }
                         card("到访城市 TOP5") { cityList }
-                        card("车型分布") { kindChart }
-                        card("席别分布") { seatChart }
+                        card("车型分布") { kindDonut }
+                        card("席别分布") { seatDonut }
                         card("之最") { recordsList }
                     }
                 }
@@ -32,36 +32,66 @@ struct StatsView: View {
         }
     }
 
-    // MARK: 总览
+    // MARK: 渐变总览
 
-    private var overviewCard: some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 14) {
-            statTile("累计乘车", "\(entries.count)", "次")
-            statTile("总里程", mileageText, "")
-            statTile("途经车站", "\(uniqueStations.count)", "个")
-            statTile("购票花费", spendText, "")
+    private var heroCard: some View {
+        VStack(spacing: 16) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("旅行总览")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(.white.opacity(0.85))
+                    Text("\(entries.count) 段旅程")
+                        .font(.system(size: 26, weight: .heavy, design: .rounded))
+                        .foregroundColor(.white)
+                }
+                Spacer()
+                Image(systemName: "tram.fill")
+                    .font(.system(size: 30))
+                    .foregroundColor(.white.opacity(0.5))
+            }
+            HStack(spacing: 10) {
+                heroStat("总里程", mileageText, "km", "arrow.left.and.right")
+                heroStat("途经车站", "\(uniqueStations.count)", "个", "mappin.and.ellipse")
+                heroStat("购票花费", "¥\(spendText)", "", "yensign.circle")
+            }
         }
-        .padding(16)
-        .background(cardBackground)
+        .padding(18)
+        .background(
+            RoundedRectangle(cornerRadius: 18)
+                .fill(
+                    LinearGradient(colors: [Theme.railBlueDeep, Theme.railBlue,
+                                            Color(red: 0.16, green: 0.42, blue: 0.72)],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing)
+                )
+                .shadow(color: Theme.railBlue.opacity(0.35), radius: 12, y: 6)
+        )
     }
 
-    private func statTile(_ label: String, _ value: String, _ unit: String) -> some View {
+    private func heroStat(_ label: String, _ value: String, _ unit: String, _ icon: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(label)
-                .font(.system(size: 12))
-                .foregroundColor(Theme.ticketGray)
-            HStack(alignment: .firstTextBaseline, spacing: 3) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.white.opacity(0.7))
+                Text(label)
+                    .font(.system(size: 11))
+                    .foregroundColor(.white.opacity(0.75))
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
                 Text(value)
-                    .font(.system(size: 24, weight: .heavy, design: .rounded))
-                    .foregroundColor(Theme.railRed)
+                    .font(.system(size: 19, weight: .heavy, design: .rounded))
+                    .foregroundColor(.white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
                 if !unit.isEmpty {
-                    Text(unit).font(.system(size: 12)).foregroundColor(Theme.ticketGray)
+                    Text(unit).font(.system(size: 10)).foregroundColor(.white.opacity(0.7))
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.12)))
     }
 
     // MARK: 年度趋势
@@ -70,13 +100,22 @@ struct StatsView: View {
         let counts = Dictionary(grouping: entries) { Calendar.current.component(.year, from: $0.date) }
             .map { (year: $0.key, count: $0.value.count) }
             .sorted { $0.year < $1.year }
+        let maxCount = counts.map(\.count).max() ?? 1
         return Chart(counts, id: \.year) { item in
             BarMark(
                 x: .value("年份", String(item.year)),
                 y: .value("次数", item.count)
             )
-            .foregroundStyle(Theme.railRed.gradient)
-            .cornerRadius(4)
+            .foregroundStyle(
+                item.count == maxCount ? AnyShapeStyle(Theme.railRed.gradient)
+                                       : AnyShapeStyle(Theme.railRed.opacity(0.45).gradient)
+            )
+            .cornerRadius(5)
+            .annotation(position: .top, spacing: 4) {
+                Text("\(item.count)")
+                    .font(.system(size: 9, weight: .bold, design: .rounded))
+                    .foregroundColor(Theme.ticketGray)
+            }
         }
         .chartXAxis {
             AxisMarks { value in
@@ -88,7 +127,13 @@ struct StatsView: View {
                 }
             }
         }
-        .frame(height: 150)
+        .chartYAxis {
+            AxisMarks { _ in
+                AxisGridLine().foregroundStyle(Theme.ticketInk.opacity(0.06))
+                AxisValueLabel().foregroundStyle(Theme.ticketGray)
+            }
+        }
+        .frame(height: 170)
     }
 
     // MARK: 线路 TOP5
@@ -120,9 +165,9 @@ struct StatsView: View {
         return rankingRows(top, unit: "次")
     }
 
-    // MARK: 车型分布
+    // MARK: 车型环形图
 
-    private var kindChart: some View {
+    private var kindDonut: some View {
         let counts = Dictionary(grouping: entries) { entry -> String in
             guard let no = entry.trainNo, !no.isEmpty, let kind = entry.kindDescription else { return "未填车次" }
             switch kind {
@@ -132,33 +177,97 @@ struct StatsView: View {
         }
         .map { (kind: $0.key, count: $0.value.count) }
         .sorted { $0.count > $1.count }
-        return Chart(counts, id: \.kind) { item in
-            BarMark(
-                x: .value("次数", item.count),
-                y: .value("车型", item.kind)
+        let colors = [Theme.railBlue, Theme.railRed, Theme.routeGreen, Theme.ticketGray]
+        return VStack(spacing: 8) {
+            Chart(counts, id: \.kind) { item in
+                let idx = counts.firstIndex { $0.kind == item.kind } ?? 0
+                SectorMark(
+                    angle: .value("次数", item.count),
+                    innerRadius: .ratio(0.62),
+                    angularInset: 2
+                )
+                .foregroundStyle(colors[idx % colors.count].gradient)
+                .cornerRadius(4)
+            }
+            .frame(height: 120)
+            .overlay(
+                VStack(spacing: 0) {
+                    Text("\(entries.count)")
+                        .font(.system(size: 18, weight: .heavy, design: .rounded))
+                        .foregroundColor(Theme.ticketInk)
+                    Text("总计")
+                        .font(.system(size: 9))
+                        .foregroundColor(Theme.ticketGray)
+                }
             )
-            .foregroundStyle(Theme.railBlue.gradient)
-            .cornerRadius(3)
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(Array(counts.enumerated()), id: \.offset) { idx, item in
+                    HStack(spacing: 5) {
+                        Circle()
+                            .fill(colors[idx % colors.count])
+                            .frame(width: 7, height: 7)
+                        Text(item.kind)
+                            .font(.system(size: 10))
+                            .foregroundColor(Theme.ticketInk.opacity(0.8))
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                        Text("\(item.count)")
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .foregroundColor(Theme.ticketGray)
+                    }
+                }
+            }
         }
-        .chartXAxis { AxisMarks(position: .bottom) }
-        .frame(height: CGFloat(max(70, counts.count * 34)))
     }
 
-    // MARK: 席别分布
+    // MARK: 席别环形图
 
-    private var seatChart: some View {
+    private var seatDonut: some View {
         let counts = Dictionary(grouping: entries) { ($0.seatClass?.isEmpty == false) ? $0.seatClass! : "未填" }
             .map { (seat: $0.key, count: $0.value.count) }
             .sorted { $0.count > $1.count }
-        return Chart(counts, id: \.seat) { item in
-            BarMark(
-                x: .value("次数", item.count),
-                y: .value("席别", item.seat)
+        let colors = [Theme.routeGreen, Theme.railBlue, Theme.railRed,
+                      Theme.routePalette[0], Theme.routePalette[1], Theme.routePalette[2]]
+        return VStack(spacing: 8) {
+            Chart(counts, id: \.seat) { item in
+                let idx = counts.firstIndex { $0.seat == item.seat } ?? 0
+                SectorMark(
+                    angle: .value("次数", item.count),
+                    innerRadius: .ratio(0.62),
+                    angularInset: 2
+                )
+                .foregroundStyle(colors[idx % colors.count].gradient)
+                .cornerRadius(4)
+            }
+            .frame(height: 120)
+            .overlay(
+                VStack(spacing: 0) {
+                    Text("\(counts.count)")
+                        .font(.system(size: 18, weight: .heavy, design: .rounded))
+                        .foregroundColor(Theme.ticketInk)
+                    Text("席别")
+                        .font(.system(size: 9))
+                        .foregroundColor(Theme.ticketGray)
+                }
             )
-            .foregroundStyle(Theme.railRed.opacity(0.75).gradient)
-            .cornerRadius(3)
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(Array(counts.enumerated()), id: \.offset) { idx, item in
+                    HStack(spacing: 5) {
+                        Circle()
+                            .fill(colors[idx % colors.count])
+                            .frame(width: 7, height: 7)
+                        Text(item.seat)
+                            .font(.system(size: 10))
+                            .foregroundColor(Theme.ticketInk.opacity(0.8))
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                        Text("\(item.count)")
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .foregroundColor(Theme.ticketGray)
+                    }
+                }
+            }
         }
-        .frame(height: CGFloat(max(70, counts.count * 30)))
     }
 
     // MARK: 之最
@@ -166,16 +275,16 @@ struct StatsView: View {
     private var recordsList: some View {
         VStack(alignment: .leading, spacing: 10) {
             if let earliest = entries.last {
-                recordRow("最早一张", Fmt.dotDate.string(from: earliest.date),
-                          routeText(earliest))
+                recordRow("clock", "最早一张", Fmt.dotDate.string(from: earliest.date),
+                          routeText(earliest), Theme.railBlue)
             }
             if let maxPrice = entries.max(by: { ($0.price ?? 0) < ($1.price ?? 0) }),
                let price = maxPrice.price, price > 0 {
                 let text = price.truncatingRemainder(dividingBy: 1) == 0
                     ? String(format: "¥%.0f", price)
                     : String(format: "¥%.1f", price)
-                recordRow("最贵一张", text,
-                          "\(maxPrice.trainNo ?? "") \(routeText(maxPrice))")
+                recordRow("yensign.circle.fill", "最贵一张", text,
+                          "\(maxPrice.trainNo ?? "") \(routeText(maxPrice))", Theme.railRed)
             }
             if let longest = entries
                 .filter({ entry -> Bool in
@@ -183,39 +292,63 @@ struct StatsView: View {
                     return km > 0
                 })
                 .max(by: { tripKm($0) < tripKm($1) }) {
-                recordRow("单程最远", "\(Int(tripKm(longest))) km",
-                          "\(longest.trainNo ?? "") \(routeText(longest))")
+                recordRow("arrow.left.and.right.circle.fill", "单程最远", "\(Int(tripKm(longest))) km",
+                          "\(longest.trainNo ?? "") \(routeText(longest))", Theme.routeGreen)
             }
         }
     }
 
-    private func recordRow(_ label: String, _ value: String, _ detail: String) -> some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(label)
-                .font(.system(size: 12))
-                .foregroundColor(Theme.ticketGray)
-                .frame(width: 60, alignment: .leading)
-            Text(value)
-                .font(.system(size: 15, weight: .heavy, design: .rounded))
-                .foregroundColor(Theme.railRed)
-            Text(detail)
-                .font(.system(size: 12))
-                .foregroundColor(Theme.ticketInk)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
+    private func recordRow(_ icon: String, _ label: String, _ value: String, _ detail: String, _ tint: Color) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(tint)
+                .frame(width: 32, height: 32)
+                .background(Circle().fill(tint.opacity(0.12)))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(label)
+                    .font(.system(size: 10))
+                    .foregroundColor(Theme.ticketGray)
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(value)
+                        .font(.system(size: 15, weight: .heavy, design: .rounded))
+                        .foregroundColor(tint)
+                    Text(detail)
+                        .font(.system(size: 11))
+                        .foregroundColor(Theme.ticketInk)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+            }
             Spacer()
         }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(tint.opacity(0.06))
+        )
     }
 
     // MARK: 排行条目
 
     private func rankingRows(_ items: [(String, Int)], unit: String) -> some View {
         let maxCount = items.map(\.1).max() ?? 1
+        let barColors = [Theme.railRed, Theme.railBlue, Theme.routeGreen,
+                         Theme.routePalette[0], Theme.routePalette[1]]
         return VStack(alignment: .leading, spacing: 10) {
             ForEach(Array(items.enumerated()), id: \.offset) { index, item in
                 VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text("\(index + 1). \(item.0)")
+                    HStack(spacing: 6) {
+                        Text("\(index + 1)")
+                            .font(.system(size: 11, weight: .heavy, design: .rounded))
+                            .foregroundColor(.white)
+                            .frame(width: 18, height: 18)
+                            .background(
+                                Circle().fill(index < 3
+                                             ? AnyShapeStyle(barColors[index].gradient)
+                                             : AnyShapeStyle(Theme.ticketGray.opacity(0.5)))
+                            )
+                        Text(item.0)
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(Theme.ticketInk)
                             .lineLimit(1)
@@ -223,14 +356,14 @@ struct StatsView: View {
                         Spacer()
                         Text("\(item.1) \(unit)")
                             .font(.system(size: 12, weight: .semibold, design: .rounded))
-                            .foregroundColor(Theme.railRed)
+                            .foregroundColor(barColors[index % barColors.count])
                     }
                     GeometryReader { geo in
                         Capsule()
-                            .fill(Theme.railRed.opacity(0.12))
+                            .fill(Theme.ticketInk.opacity(0.05))
                             .overlay(alignment: .leading) {
                                 Capsule()
-                                    .fill(Theme.railRed.gradient)
+                                    .fill(barColors[index % barColors.count].gradient)
                                     .frame(width: geo.size.width * CGFloat(item.1) / CGFloat(maxCount))
                             }
                     }
@@ -274,16 +407,21 @@ struct StatsView: View {
     // MARK: 通用
 
     private var cardBackground: some View {
-        RoundedRectangle(cornerRadius: 14)
-            .fill(Color.white.opacity(0.85))
-            .shadow(color: .black.opacity(0.06), radius: 4, y: 2)
+        RoundedRectangle(cornerRadius: 16)
+            .fill(Color.white.opacity(0.9))
+            .shadow(color: .black.opacity(0.07), radius: 6, y: 3)
     }
 
     private func card<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(title)
-                .font(.system(size: 14, weight: .heavy))
-                .foregroundColor(Theme.ticketInk)
+            HStack(spacing: 6) {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Theme.railRed)
+                    .frame(width: 4, height: 14)
+                Text(title)
+                    .font(.system(size: 14, weight: .heavy))
+                    .foregroundColor(Theme.ticketInk)
+            }
             content()
         }
         .padding(16)
