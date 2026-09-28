@@ -15,10 +15,10 @@ struct StatsView: View {
                     } else {
                         heroCard
                         card("年度乘车次数") { yearChart }
+                        card("月度乘车次数 · 近 12 个月") { monthChart }
+                        card("乘车时间分布 · 出发时段") { hourChart }
                         card("常走的线路 TOP5") { routeList }
                         card("到访城市 TOP5") { cityList }
-                        card("车型分布") { kindDonut }
-                        card("席别分布") { seatDonut }
                         card("之最") { recordsList }
                     }
                 }
@@ -27,6 +27,9 @@ struct StatsView: View {
                 .padding(.bottom, 30)
             }
             .background(Theme.paperBackground.ignoresSafeArea())
+            // 调试钩子:-StatsBottom / -StatsMid 停在底部/中部,方便无头截图验证
+            .defaultScrollAnchor(ProcessInfo.processInfo.arguments.contains("-StatsBottom") ? .bottom
+                                 : ProcessInfo.processInfo.arguments.contains("-StatsMid") ? .center : .top)
             .navigationTitle("统计")
             .navigationBarTitleDisplayMode(.inline)
         }
@@ -100,16 +103,13 @@ struct StatsView: View {
         let counts = Dictionary(grouping: entries) { Calendar.current.component(.year, from: $0.date) }
             .map { (year: $0.key, count: $0.value.count) }
             .sorted { $0.year < $1.year }
-        let maxCount = counts.map(\.count).max() ?? 1
-        return Chart(counts, id: \.year) { item in
+        return Chart(Array(counts.enumerated()), id: \.element.year) { pair in
+            let item = pair.element
             BarMark(
                 x: .value("年份", String(item.year)),
                 y: .value("次数", item.count)
             )
-            .foregroundStyle(
-                item.count == maxCount ? AnyShapeStyle(Theme.railRed.gradient)
-                                       : AnyShapeStyle(Theme.railRed.opacity(0.45).gradient)
-            )
+            .foregroundStyle(barColor(String(item.year), pair.offset).gradient)
             .cornerRadius(5)
             .annotation(position: .top, spacing: 4) {
                 Text("\(item.count)")
@@ -123,6 +123,117 @@ struct StatsView: View {
                 AxisValueLabel {
                     if let y = value.as(String.self) {
                         Text(String(y.suffix(2))).font(.system(size: 10))
+                    }
+                }
+            }
+        }
+        .chartYAxis {
+            AxisMarks { _ in
+                AxisGridLine().foregroundStyle(Theme.ticketInk.opacity(0.06))
+                AxisValueLabel().foregroundStyle(Theme.ticketGray)
+            }
+        }
+        .frame(height: 170)
+    }
+
+    // MARK: 月度趋势(近 12 个月)
+
+    private var monthChart: some View {
+        let cal = Calendar.current
+        var months: [(key: String, label: String, count: Int)] = []
+        for offset in stride(from: 11, through: 0, by: -1) {
+            guard let month = cal.date(byAdding: .month, value: -offset, to: Date()) else { continue }
+            let comps = cal.dateComponents([.year, .month], from: month)
+            guard let y = comps.year, let m = comps.month else { continue }
+            let count = entries.filter {
+                let c = cal.dateComponents([.year, .month], from: $0.date)
+                return c.year == y && c.month == m
+            }.count
+            months.append((key: "\(y)-\(m)", label: "\(m)", count: count))
+        }
+        return Chart(Array(months.enumerated()), id: \.element.key) { pair in
+            let item = pair.element
+            BarMark(
+                x: .value("月份", item.label),
+                y: .value("次数", item.count)
+            )
+            .foregroundStyle(barColor(item.key, pair.offset).gradient)
+            .cornerRadius(5)
+            .annotation(position: .top, spacing: 4) {
+                if item.count > 0 {
+                    Text("\(item.count)")
+                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .foregroundColor(Theme.ticketGray)
+                }
+            }
+        }
+        .chartXAxis {
+            AxisMarks { value in
+                AxisGridLine().foregroundStyle(Color.clear)
+                AxisValueLabel {
+                    if let m = value.as(String.self) {
+                        Text(m).font(.system(size: 10))
+                    }
+                }
+            }
+        }
+        .chartYAxis {
+            AxisMarks { _ in
+                AxisGridLine().foregroundStyle(Theme.ticketInk.opacity(0.06))
+                AxisValueLabel().foregroundStyle(Theme.ticketGray)
+            }
+        }
+        .frame(height: 170)
+    }
+
+    /// 柱子配色:按序号黄金角铺开、key 提供随机偏移——相邻柱子颜色一定不同,刷新不变色
+    private func barColor(_ key: String, _ index: Int) -> Color {
+        var hash: UInt64 = 5381
+        for byte in key.utf8 { hash = (hash &* 33) &+ UInt64(byte) }
+        hash ^= hash >> 33
+        hash = hash &* 0xff51afd7ed558ccd
+        hash ^= hash >> 33
+        hash = hash &* 0xc4ceb9fe1a85ec53
+        hash ^= hash >> 33
+        let hue = (Double(index) * 0.61803398875 + Double(hash % 1000) / 1000)
+            .truncatingRemainder(dividingBy: 1)
+        let brightness = 0.80 + Double((hash / 1000) % 13) / 100
+        return Color(hue: hue, saturation: 0.62, brightness: brightness)
+    }
+
+    // MARK: 乘车时间分布(出发时段)
+
+    private var hourChart: some View {
+        let bins = stride(from: 0, to: 24, by: 3).map { start -> (key: String, label: String, count: Int) in
+            let count = entries.filter { entry in
+                guard let t = entry.departTime else { return false }
+                let h = Calendar.current.component(.hour, from: t)
+                return h >= start && h < start + 3
+            }.count
+            return (key: "h\(start)", label: "\(start)-\(start + 3)", count: count)
+        }
+        return Chart(Array(bins.enumerated()), id: \.element.key) { pair in
+            let item = pair.element
+            BarMark(
+                x: .value("时段", item.label),
+                y: .value("次数", item.count)
+            )
+            .foregroundStyle(barColor(item.key, pair.offset).gradient)
+            .cornerRadius(5)
+            .annotation(position: .top, spacing: 4) {
+                if item.count > 0 {
+                    Text("\(item.count)")
+                        .font(.system(size: 9, weight: .bold, design: .rounded))
+                        .foregroundColor(Theme.ticketGray)
+                }
+            }
+        }
+        .chartXAxis {
+            AxisMarks { value in
+                AxisGridLine().foregroundStyle(Color.clear)
+                AxisValueLabel {
+                    if let m = value.as(String.self) {
+                        Text(m).font(.system(size: 9))
                     }
                 }
             }
@@ -165,111 +276,6 @@ struct StatsView: View {
         return rankingRows(top, unit: "次")
     }
 
-    // MARK: 车型环形图
-
-    private var kindDonut: some View {
-        let counts = Dictionary(grouping: entries) { entry -> String in
-            guard let no = entry.trainNo, !no.isEmpty, let kind = entry.kindDescription else { return "未填车次" }
-            switch kind {
-            case "高速动车", "动车组", "城际列车": return "高铁动车"
-            default: return "普速列车"
-            }
-        }
-        .map { (kind: $0.key, count: $0.value.count) }
-        .sorted { $0.count > $1.count }
-        let colors = [Theme.railBlue, Theme.railRed, Theme.routeGreen, Theme.ticketGray]
-        return VStack(spacing: 8) {
-            Chart(counts, id: \.kind) { item in
-                let idx = counts.firstIndex { $0.kind == item.kind } ?? 0
-                SectorMark(
-                    angle: .value("次数", item.count),
-                    innerRadius: .ratio(0.62),
-                    angularInset: 2
-                )
-                .foregroundStyle(colors[idx % colors.count].gradient)
-                .cornerRadius(4)
-            }
-            .frame(height: 120)
-            .overlay(
-                VStack(spacing: 0) {
-                    Text("\(entries.count)")
-                        .font(.system(size: 18, weight: .heavy, design: .rounded))
-                        .foregroundColor(Theme.ticketInk)
-                    Text("总计")
-                        .font(.system(size: 9))
-                        .foregroundColor(Theme.ticketGray)
-                }
-            )
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(Array(counts.enumerated()), id: \.offset) { idx, item in
-                    HStack(spacing: 5) {
-                        Circle()
-                            .fill(colors[idx % colors.count])
-                            .frame(width: 7, height: 7)
-                        Text(item.kind)
-                            .font(.system(size: 10))
-                            .foregroundColor(Theme.ticketInk.opacity(0.8))
-                            .lineLimit(1)
-                        Spacer(minLength: 0)
-                        Text("\(item.count)")
-                            .font(.system(size: 10, weight: .bold, design: .rounded))
-                            .foregroundColor(Theme.ticketGray)
-                    }
-                }
-            }
-        }
-    }
-
-    // MARK: 席别环形图
-
-    private var seatDonut: some View {
-        let counts = Dictionary(grouping: entries) { ($0.seatClass?.isEmpty == false) ? $0.seatClass! : "未填" }
-            .map { (seat: $0.key, count: $0.value.count) }
-            .sorted { $0.count > $1.count }
-        let colors = [Theme.routeGreen, Theme.railBlue, Theme.railRed,
-                      Theme.routePalette[0], Theme.routePalette[1], Theme.routePalette[2]]
-        return VStack(spacing: 8) {
-            Chart(counts, id: \.seat) { item in
-                let idx = counts.firstIndex { $0.seat == item.seat } ?? 0
-                SectorMark(
-                    angle: .value("次数", item.count),
-                    innerRadius: .ratio(0.62),
-                    angularInset: 2
-                )
-                .foregroundStyle(colors[idx % colors.count].gradient)
-                .cornerRadius(4)
-            }
-            .frame(height: 120)
-            .overlay(
-                VStack(spacing: 0) {
-                    Text("\(counts.count)")
-                        .font(.system(size: 18, weight: .heavy, design: .rounded))
-                        .foregroundColor(Theme.ticketInk)
-                    Text("席别")
-                        .font(.system(size: 9))
-                        .foregroundColor(Theme.ticketGray)
-                }
-            )
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(Array(counts.enumerated()), id: \.offset) { idx, item in
-                    HStack(spacing: 5) {
-                        Circle()
-                            .fill(colors[idx % colors.count])
-                            .frame(width: 7, height: 7)
-                        Text(item.seat)
-                            .font(.system(size: 10))
-                            .foregroundColor(Theme.ticketInk.opacity(0.8))
-                            .lineLimit(1)
-                        Spacer(minLength: 0)
-                        Text("\(item.count)")
-                            .font(.system(size: 10, weight: .bold, design: .rounded))
-                            .foregroundColor(Theme.ticketGray)
-                    }
-                }
-            }
-        }
-    }
-
     // MARK: 之最
 
     private var recordsList: some View {
@@ -277,6 +283,15 @@ struct StatsView: View {
             if let earliest = entries.last {
                 recordRow("clock", "最早一张", Fmt.dotDate.string(from: earliest.date),
                           routeText(earliest), Theme.railBlue)
+            }
+            let timed = entries.filter { $0.departTime != nil }
+            if let first = timed.min(by: { dayMinutes($0) < dayMinutes($1) }) {
+                recordRow("sunrise.fill", "最早乘车", Fmt.clock.string(from: first.departTime!),
+                          "\(first.trainNo ?? "") \(routeText(first))", Theme.routeGreen)
+            }
+            if let last = timed.max(by: { dayMinutes($0) < dayMinutes($1) }) {
+                recordRow("sunset.fill", "最晚乘车", Fmt.clock.string(from: last.departTime!),
+                          "\(last.trainNo ?? "") \(routeText(last))", Theme.railBlueDeep)
             }
             if let maxPrice = entries.max(by: { ($0.price ?? 0) < ($1.price ?? 0) }),
                let price = maxPrice.price, price > 0 {
@@ -392,6 +407,13 @@ struct StatsView: View {
     private var spendText: String {
         let total = entries.compactMap(\.price).reduce(0, +)
         return total >= 10000 ? String(format: "%.1f万", total / 10000) : String(format: "%.0f", total)
+    }
+
+    /// 发车时刻在一天中的分钟数,用于找最早/最晚乘车
+    private func dayMinutes(_ entry: TicketEntry) -> Int {
+        guard let t = entry.departTime else { return 0 }
+        let c = Calendar.current.dateComponents([.hour, .minute], from: t)
+        return (c.hour ?? 0) * 60 + (c.minute ?? 0)
     }
 
     private func tripKm(_ entry: TicketEntry) -> Double {

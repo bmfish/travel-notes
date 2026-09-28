@@ -111,6 +111,17 @@ func ticket(angle: CGFloat, cx: CGFloat, cy: CGFloat, w: CGFloat, h: CGFloat,
         draw("二等座", smallFont, grayColor, tearX + 34, h / 2 - 84)
         let priceFont = font("ArialRoundedMTBold", 58)
         draw(price ?? "", priceFont, accent, tearX + 34, -58)
+    } else if let from = from, let to = to {
+        // 后面的票:只印一行站名,放在卡片下半部,让前卡压住一点顶部
+        let stationFont = font("PingFangSC-Semibold", 56)
+        let arrowFont = font("PingFangSC-Semibold", 46)
+        let fromW = textWidth(from, stationFont)
+        let arrowW = textWidth("→", arrowFont)
+        let startX = -w / 2 + 46
+        draw(from, stationFont, inkColor, startX, 70)
+        let arrowX = startX + fromW + 18
+        draw("→", arrowFont, accent, arrowX, 66)
+        draw(to, stationFont, inkColor, arrowX + arrowW + 18, 70)
     }
     ctx.restoreGState()
 }
@@ -120,10 +131,10 @@ let creamDim = CGColor(red: 0.925, green: 0.878, blue: 0.80, alpha: 1)
 let blueA = CGColor(red: 0.09, green: 0.32, blue: 0.58, alpha: 1)
 let greenA = CGColor(red: 0.13, green: 0.60, blue: 0.35, alpha: 1)
 
-// 后面探出的绿色车票
+// 后面探出的绿色车票(返程:上海 → 郑州,顶部被前卡遮挡)
 ticket(angle: 0.16, cx: 400, cy: 660, w: 700, h: 300,
        fill: creamDim, accent: greenA, shadowAlpha: 0.30,
-       trainNo: nil, from: nil, to: nil, price: nil)
+       trainNo: nil, from: "上海虹桥", to: "郑州东", price: nil)
 
 // 前面主车票
 ticket(angle: -0.10, cx: 545, cy: 430, w: 820, h: 330,

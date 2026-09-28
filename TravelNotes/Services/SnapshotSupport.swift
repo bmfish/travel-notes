@@ -43,7 +43,10 @@ enum SnapshotSupport {
         let renderer = ImageRenderer(content: view)
         renderer.scale = 2
         if let image = renderer.uiImage, let data = image.pngData() {
-            try? data.write(to: URL(fileURLWithPath: "/tmp/tn_\(name).png"))
+            // 沙盒内临时目录,宿主机可在 App 容器 tmp 下取到
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("tn_\(name).png")
+            try? data.write(to: url)
+            print("SNAPSHOT \(url.path)")
         }
     }
 
@@ -78,7 +81,9 @@ enum SnapshotSupport {
             let image = renderer.image { ctx in
                 map.layer.render(in: ctx.cgContext)
             }
-            try? image.pngData()?.write(to: URL(fileURLWithPath: "/tmp/tn_map.png"))
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("tn_map.png")
+            try? image.pngData()?.write(to: url)
+            print("SNAPSHOT \(url.path)")
             exit(0)
         }
     }

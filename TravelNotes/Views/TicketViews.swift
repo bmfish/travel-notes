@@ -44,34 +44,6 @@ struct TicketTear: View {
     }
 }
 
-/// 装饰用的伪二维码(确定性图案)
-struct FakeQR: View {
-    var size: CGFloat = 40
-    var color: Color = Theme.ticketInk
-
-    var body: some View {
-        Canvas { context, canvasSize in
-            let n = 9
-            let cell = canvasSize.width / CGFloat(n)
-            for row in 0..<n {
-                for col in 0..<n {
-                    if (row * 7 + col * 13 + row * col) % 5 < 2 {
-                        let rect = CGRect(x: CGFloat(col) * cell, y: CGFloat(row) * cell,
-                                          width: cell, height: cell)
-                        context.fill(Path(rect), with: .color(color))
-                    }
-                }
-            }
-            for (r, c) in [(0, 0), (0, n - 3), (n - 3, 0)] {
-                let rect = CGRect(x: CGFloat(c) * cell, y: CGFloat(r) * cell,
-                                  width: cell * 3, height: cell * 3)
-                context.stroke(Path(rect), with: .color(color), lineWidth: 1)
-            }
-        }
-        .frame(width: size, height: size)
-    }
-}
-
 // MARK: - 蓝色磁卡票(还原 2007–2020 实票版式)
 
 struct BlueTicketFace: View {
@@ -154,7 +126,7 @@ struct BlueTicketFace: View {
                     .foregroundColor(navy)
             }
 
-            // 限乘 + 乘车人 + 票号 + 二维码
+            // 限乘 + 乘车人 + 票号
             HStack(alignment: .bottom) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("限乘当日当次车")
@@ -170,7 +142,6 @@ struct BlueTicketFace: View {
                         .foregroundColor(navy.opacity(0.7))
                 }
                 Spacer()
-                FakeQR(size: 58, color: navy)
             }
         }
         .padding(16)
