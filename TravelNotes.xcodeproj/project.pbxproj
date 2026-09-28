@@ -28,6 +28,7 @@
 		A3C32279C3120F7421FF0ED1 /* TrainLiveService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30D19CCAB464A8FF70EF1F2D /* TrainLiveService.swift */; };
 		A9937BDB70F37820405B71AA /* TicketEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F846C97D7CAC1BB047BEBD8 /* TicketEntry.swift */; };
 		BDDB9C32B14D779AB4CD4F4A /* TicketViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3597E02BC7C15DF6AB8DD1D /* TicketViews.swift */; };
+		C4D125CF6135EDCDBB8CFFE6 /* TripCalendar.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0AC828E983F2A4E97CEA786 /* TripCalendar.swift */; };
 		DB948EA30625F17FDD36F044 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A7FD49004D7F6BE9AE3F2C23 /* Assets.xcassets */; };
 		E5B84B49C2722079927095B0 /* TripView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D59306F419C23FACE2DD11D8 /* TripView.swift */; };
 		ECDD9609F85D9D40DCAD7CD2 /* FootprintView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2F8520E6195BB7CF8FD0860 /* FootprintView.swift */; };
@@ -60,6 +61,7 @@
 		E01CA94A4180E416AA640CD3 /* StatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsView.swift; sourceTree = "<group>"; };
 		E3597E02BC7C15DF6AB8DD1D /* TicketViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TicketViews.swift; sourceTree = "<group>"; };
 		EDC108E80505DF165E030AA8 /* TravelNotesApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TravelNotesApp.swift; sourceTree = "<group>"; };
+		F0AC828E983F2A4E97CEA786 /* TripCalendar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripCalendar.swift; sourceTree = "<group>"; };
 		FD09BFD75C0F17F8E1917E88 /* AddEditView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddEditView.swift; sourceTree = "<group>"; };
 		FFE92724140AAAC37939E021 /* SyncView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -150,6 +152,7 @@
 				66398E8910569CBED70CAC5F /* TicketMailParser.swift */,
 				30D19CCAB464A8FF70EF1F2D /* TrainLiveService.swift */,
 				BAC058B68A931597D863DFFC /* TrainScheduleService.swift */,
+				F0AC828E983F2A4E97CEA786 /* TripCalendar.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -248,6 +251,7 @@
 				A3C32279C3120F7421FF0ED1 /* TrainLiveService.swift in Sources */,
 				9949E0FDEB1455537622BF2B /* TrainScheduleService.swift in Sources */,
 				54D7F0DF3FBC410A61262D43 /* TravelNotesApp.swift in Sources */,
+				C4D125CF6135EDCDBB8CFFE6 /* TripCalendar.swift in Sources */,
 				E5B84B49C2722079927095B0 /* TripView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
