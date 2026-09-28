@@ -14,6 +14,8 @@ struct TripView: View {
     @State private var arriveTimes: [UUID: String] = [:]
     /// 站台(车站大屏提前几天就排出来),按行程 id 索引
     @State private var platforms: [UUID: String] = [:]
+    /// 预计检票口(同站台邻车实测推导),按行程 id 索引
+    @State private var gateEstimates: [UUID: String] = [:]
 
     private var upcoming: [TicketEntry] {
         let start = Calendar.current.startOfDay(for: Date())
@@ -58,7 +60,8 @@ struct TripView: View {
                                                 UpcomingTripCard(entry: entry,
                                                                  liveInfo: liveInfos[entry.id],
                                                                  arriveTime: arriveTimes[entry.id],
-                                                                 platform: platforms[entry.id])
+                                                                 platform: platforms[entry.id],
+                                                                 gateEstimate: gateEstimates[entry.id])
                                             }
                                             .buttonStyle(.plain)
                                             .contextMenu {
@@ -153,6 +156,12 @@ struct TripView: View {
             }
             if let info = try? await TrainLiveService.shared.live(trainCode: code, date: entry.date) {
                 liveInfos[entry.id] = info
+            }
+            if liveInfos[entry.id]?.stop(at: entry.fromStation)?.gateDisplay == nil,
+               gateEstimates[entry.id] == nil,
+               let from = entry.fromStation,
+               let est = try? await TrainLiveService.shared.estimatedGate(trainCode: code, date: entry.date, station: from) {
+                gateEstimates[entry.id] = est
             }
         }
     }
@@ -258,6 +267,8 @@ private struct UpcomingTripCard: View {
     let arriveTime: String?
     /// 站台(车站大屏,提前几天就有)
     let platform: String?
+    /// 预计检票口(正式值未公布时,同站台邻车实测推导)
+    let gateEstimate: String?
 
     private var color: Color { Theme.routeColor(from: entry.fromStation, to: entry.toStation) }
 
@@ -269,7 +280,7 @@ private struct UpcomingTripCard: View {
 
     private var gateChipText: String {
         if let gateText { return gateText }
-        // 12306 出发当天才公布检票口(站台提前几天就有),未到出发日说明白,别显示成像 bug
+        if let gateEstimate { return "\(gateEstimate)(预计)" }
         if isToday { return liveInfo == nil ? "查询中…" : "待公布" }
         return "出发当天公布"
     }

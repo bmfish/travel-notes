@@ -56,6 +56,8 @@ final class TrainLiveService {
 
     // 实时数据短时缓存,避免刷新时反复请求
     private var cache: [String: (info: TrainLiveInfo, at: Date)] = [:]
+    // 预计检票口缓存
+    private var estCache: [String: (value: String, at: Date)] = [:]
     private let cacheTTL: TimeInterval = 180
     private let queue = DispatchQueue(label: "rail.trainLive")
 
@@ -86,6 +88,65 @@ final class TrainLiveService {
     static func looseMatch(_ a: String, _ b: String) -> Bool {
         let x = a.trimmingCharacters(in: .whitespaces), y = b.trimmingCharacters(in: .whitespaces)
         return x == y || x == y + "站" || x + "站" == y
+    }
+
+    /// 预计检票口:12306 出发当天才公布检票口,但同站台的车共用固定检票口。
+    /// 用「今天同站台邻车」的实测检票口提前推出具体值,出发当天调用方直接换正式值。
+    func estimatedGate(trainCode: String, date: Date, station: String) async -> String? {
+        let code = trainCode.trimmingCharacters(in: .whitespaces).uppercased()
+        let day = Self.dayFormatter.string(from: date)
+        let key = "est|\(code)|\(day)|\(station)"
+        if let hit = queue.sync(execute: { estCache[key] }),
+           Date().timeIntervalSince(hit.at) < cacheTTL {
+            return hit.value
+        }
+        let result = try? await computeEstimatedGate(code: code, day: day, station: station)
+        if let result {
+            queue.sync { estCache[key] = (result, Date()) }
+        }
+        return result
+    }
+
+    private func computeEstimatedGate(code: String, day: String, station: String) async throws -> String? {
+        let today = Self.dayFormatter.string(from: Date())
+        if let tele = try await TrainScheduleService.shared.telecode(for: station) {
+            // 按未来计划站台找今天用同一站台的邻车,借它实测的检票口
+            let rowsFuture = try await boardRows(stationCode: tele, day: day)
+            let myRaw = rowsFuture.first {
+                ($0["station_train_code"] as? String) == code && ($0["station_train_date"] as? String) == day
+            }?["platform_no"] as? String
+            if let myRaw, !myRaw.isEmpty {
+                let mySides = Set(Self.sides(of: myRaw))
+                var best: (train: String, score: Int)?
+                for r in try await boardRows(stationCode: tele, day: today) {
+                    guard let c = r["station_train_code"] as? String, c != code,
+                          let p = r["platform_no"] as? String, !p.isEmpty else { continue }
+                    let s = Set(Self.sides(of: p))
+                    let score = p == myRaw ? 3 : (s == mySides ? 2 : (s.isDisjoint(with: mySides) ? 0 : 1))
+                    if score > (best?.score ?? 0) { best = (c, score) }
+                }
+                if let best, let info = try? await live(trainCode: best.train, date: Date()),
+                   let gate = info.stop(at: station)?.gateDisplay {
+                    return gate
+                }
+            }
+        }
+        // 兜底:自己这趟车今天的实测检票口(日常车基本天天同站台同口)
+        if day != today, let info = try? await live(trainCode: code, date: Date()),
+           let gate = info.stop(at: station)?.gateDisplay {
+            return gate
+        }
+        return nil
+    }
+
+    /// "22A#22B#" -> ["22A","22B"] 去重保序
+    private static func sides(of platformRaw: String) -> [String] {
+        var seen: [String] = []
+        for p in platformRaw.split(separator: "#") {
+            let s = String(p)
+            if !s.isEmpty && !seen.contains(s) { seen.append(s) }
+        }
+        return seen
     }
 
     /// 查询车次在指定车站、指定日期的站台(车站大屏接口,提前几天就会排出来)

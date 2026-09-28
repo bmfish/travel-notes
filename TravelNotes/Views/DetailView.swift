@@ -380,6 +380,7 @@ private struct LiveInfoCard: View {
 
     @State private var liveInfo: TrainLiveInfo?
     @State private var platform: String?
+    @State private var gateEstimate: String?
 
     private var isToday: Bool { Calendar.current.isDateInToday(entry.date) }
 
@@ -389,7 +390,7 @@ private struct LiveInfoCard: View {
 
     private var gateChipText: String {
         if let gateText { return gateText }
-        // 12306 出发当天才公布检票口(站台提前几天就有),未到出发日说明白,别显示成像 bug
+        if let gateEstimate { return "\(gateEstimate)(预计)" }
         if isToday { return liveInfo == nil ? "查询中…" : "待公布" }
         return "出发当天公布"
     }
@@ -436,10 +437,14 @@ private struct LiveInfoCard: View {
                                                                 station: entry.fromStation ?? "") {
             platform = pf
         }
-        if let info = try? await TrainLiveService.shared.live(trainCode: code, date: entry.date) {
-            liveInfo = info
+            if let info = try? await TrainLiveService.shared.live(trainCode: code, date: entry.date) {
+                liveInfo = info
+            }
+            if gateText == nil, let from = entry.fromStation,
+               let est = try? await TrainLiveService.shared.estimatedGate(trainCode: code, date: entry.date, station: from) {
+                gateEstimate = est
+            }
         }
-    }
 }
 
 struct PhotoViewerSheet: Identifiable {
