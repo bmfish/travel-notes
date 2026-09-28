@@ -106,8 +106,12 @@ final class MailSyncEngine: ObservableObject {
 
             // 阶段一:批量拉取所有邮件
             struct FetchedMail {
+                let uid: String
                 let subject: String
-                let raw: Data
+                let bodyText: String
+                let orderNumber: String?
+                let isRefund: Bool
+                let isChange: Bool
             }
             var mails: [FetchedMail] = []
             for chunk in Self.chunked(uids, size: 20) {
@@ -122,38 +126,72 @@ final class MailSyncEngine: ObservableObject {
                     guard !known.contains(messageId) else { continue }
                     let subject = MIME.decodeEncodedWords(Self.extractHeader("subject", raw: raw) ?? "")
                     let from = MIME.decodeEncodedWords(Self.extractHeader("from", raw: raw) ?? "")
-                    // 退票/退单邮件也要收集(用于建立已退票行程集合)
+                    // 退票/退单/改签邮件也要收集(分别用于退票集合与改签原票作废)
                     let isRefund = subject.contains("退票") || subject.contains("退单")
-                    guard isRefund || TicketMailParser.looksLikeTicketMail(from: from, subject: subject) else { continue }
-                    mails.append(FetchedMail(subject: subject, raw: raw))
+                    let isChange = subject.contains("改签")
+                    guard isRefund || isChange || TicketMailParser.looksLikeTicketMail(from: from, subject: subject) else { continue }
+                    let bodyText = MIME.stripHTML(MIME.extractBody(raw: raw))
+                    let uid = Self.extractUID(record.text) ?? "uid-\(doneCount)-\(mails.count)"
+                    mails.append(FetchedMail(uid: uid, subject: subject, bodyText: bodyText,
+                                             orderNumber: Self.extractOrderNumber(bodyText),
+                                             isRefund: isRefund, isChange: isChange))
                 }
             }
+            mails.sort { (Int($0.uid) ?? 0) < (Int($1.uid) ?? 0) }
 
             let ownerSetting = UserDefaults.standard.string(forKey: "mail.owner")
             let owner = (ownerSetting?.isEmpty == false) ? ownerSetting : nil
 
             // 阶段二:退票/退单邮件 → 已退票行程集合
             var refundKeys = Set<String>()
-            for mail in mails where mail.subject.contains("退票") || mail.subject.contains("退单") {
-                let text = MIME.stripHTML(MIME.extractBody(raw: mail.raw))
-                for ticket in TicketMailParser.parse(subject: mail.subject, bodyText: text, owner: owner) {
+            for mail in mails where mail.isRefund {
+                for ticket in TicketMailParser.parse(subject: mail.subject, bodyText: mail.bodyText, owner: owner) {
                     refundKeys.insert(Self.tripKey(trainNo: ticket.trainNo, from: ticket.fromStation,
                                                    to: ticket.toStation, date: ticket.date))
                 }
             }
             Self.trace("refund keys=\(refundKeys.count)")
 
-            // 阶段三:购票/改签/候补兑现邮件 → 候选票根(跳过已退票行程)
+            // 阶段三:改签处理 —— 同一订单只保留最后一次改签的新票,改签前的原票作废
+            var lastChangeByOrder: [String: FetchedMail] = [:]
+            for mail in mails where mail.isChange {
+                if let order = mail.orderNumber {
+                    lastChangeByOrder[order] = mail
+                }
+            }
+            var changeValidKeys = Set<String>()
+            for (order, mail) in lastChangeByOrder {
+                for ticket in TicketMailParser.parse(subject: mail.subject, bodyText: mail.bodyText, owner: owner) {
+                    changeValidKeys.insert(Self.tripKey(trainNo: ticket.trainNo, from: ticket.fromStation,
+                                                        to: ticket.toStation, date: ticket.date))
+                }
+            }
+            var invalidatedKeys = Set<String>()
+            for mail in mails where !mail.isChange && !mail.isRefund {
+                // 该订单后来改签过,这封邮件描述的是改签前的原票 → 作废
+                guard let order = mail.orderNumber, lastChangeByOrder[order] != nil else { continue }
+                for ticket in TicketMailParser.parse(subject: mail.subject, bodyText: mail.bodyText, owner: owner) {
+                    invalidatedKeys.insert(Self.tripKey(trainNo: ticket.trainNo, from: ticket.fromStation,
+                                                        to: ticket.toStation, date: ticket.date))
+                }
+            }
+            Self.trace("change orders=\(lastChangeByOrder.count) invalidated=\(invalidatedKeys.count) valid=\(changeValidKeys.count)")
+
+            // 阶段四:购票/改签/候补兑现邮件 → 候选票根
             var newCount = 0
             var knownTripKeys = Self.existingTripKeys(context: context)
             for mail in mails {
-                guard !mail.subject.contains("退票"), !mail.subject.contains("退单") else { continue }
-                let bodyText = MIME.stripHTML(MIME.extractBody(raw: mail.raw))
-                for ticket in TicketMailParser.parse(subject: mail.subject, bodyText: bodyText, owner: owner) {
+                guard !mail.isRefund else { continue }
+                if mail.isChange {
+                    // 同订单多次改签,只有最后一次的新票有效
+                    guard let order = mail.orderNumber, lastChangeByOrder[order]?.uid == mail.uid else { continue }
+                }
+                for ticket in TicketMailParser.parse(subject: mail.subject, bodyText: mail.bodyText, owner: owner) {
                     let tripKey = Self.tripKey(trainNo: ticket.trainNo, from: ticket.fromStation,
                                                to: ticket.toStation, date: ticket.date)
                     guard !knownTripKeys.contains(tripKey) else { continue }
                     guard !refundKeys.contains(tripKey) else { continue }
+                    if invalidatedKeys.contains(tripKey) && !changeValidKeys.contains(tripKey) { continue }
                     knownTripKeys.insert(tripKey)
                     let candidate = MailCandidate(
                         messageId: "mid-\(tripKey)",
@@ -214,6 +252,10 @@ final class MailSyncEngine: ObservableObject {
                 let from = MIME.decodeEncodedWords(Self.extractHeader("from", raw: raw) ?? "")
                 lines.append("--- uid=\(uid) subject=\(subject)")
                 let text = MIME.stripHTML(MIME.extractBody(raw: raw))
+                if subject.contains("改签") {
+                    lines.append("GSIGN_START uid=\(uid)")
+                    for chunk in text.chunks(ofLength: 260) { lines.append("GS|\(chunk)") }
+                }
                 let tickets = TicketMailParser.parse(subject: subject, bodyText: text)
                 lines.append("    parsed=\(tickets.count)")
                 for t in tickets {
@@ -303,6 +345,22 @@ final class MailSyncEngine: ObservableObject {
         }
         try? context.save()
         return count
+    }
+
+    /// 从正文提取 12306 订单号码,用于关联改签前后的邮件
+    static func extractOrderNumber(_ bodyText: String) -> String? {
+        guard let regex = try? NSRegularExpression(pattern: "订单号码\\s*([A-Z0-9]{6,16})") else { return nil }
+        guard let match = regex.firstMatch(in: bodyText, range: NSRange(bodyText.startIndex..., in: bodyText)),
+              let range = Range(match.range(at: 1), in: bodyText) else { return nil }
+        return String(bodyText[range])
+    }
+
+    /// 从 FETCH 响应头里取 UID
+    static func extractUID(_ text: String) -> String? {
+        guard let regex = try? NSRegularExpression(pattern: "UID (\\d+)"),
+              let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+              let range = Range(match.range(at: 1), in: text) else { return nil }
+        return String(text[range])
     }
 
     static func chunked(_ array: [String], size: Int) -> [[String]] {
