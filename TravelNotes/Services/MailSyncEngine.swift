@@ -112,7 +112,7 @@ final class MailSyncEngine: ObservableObject {
             statusText = "打开邮箱…"
             var known = Self.existingMessageIDs(context: context)
 
-            // 阶段一:多文件夹扫描 —— 收件箱 + 自建「12306」文件夹
+            // 阶段一:多文件夹扫描 —— 扫全部文件夹(老邮件可能被归档到自建文件夹,名字里不一定带 12306)
             struct FetchedMail {
                 let uid: String
                 let folder: String
@@ -134,7 +134,7 @@ final class MailSyncEngine: ObservableObject {
                       let match = regex.firstMatch(in: record.text, range: NSRange(record.text.startIndex..., in: record.text)),
                       let range = Range(match.range(at: 1), in: record.text) else { continue }
                 let name = String(record.text[range])
-                if name != "INBOX", name.contains("12306") { folders.append(name) }
+                if name != "INBOX", !folders.contains(name) { folders.append(name) }
             }
             Self.trace("folders=\(folders.joined(separator: ","))")
 

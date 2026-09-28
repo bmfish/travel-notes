@@ -350,6 +350,35 @@ enum TicketMailParser {
             "\($0.coach ?? "?")\($0.seat ?? "?") \($0.seatClass ?? "?") \($0.price.map { String($0) } ?? "?")"
         }.joined(separator: " ; "))
 
+        // 真实 2013 邮件全文(用户邮箱原文):长正文 + 换票说明 + 订单号等干扰项
+        let realBody = """
+        尊敬张三先生：
+        您好！
+        您在中国铁路客户服务中心网站（http://www.12306.cn）成功购买了1张车票，票款共计128.50元。所购车票信息如下：
+        1.张三，04月29日19:36，上海一郑州，T164次列车，10车091号，硬座，票价128.50元。请尽快选择如下方式之一办理换票手续后进站乘车：
+        方式一：请持购票时所使用的二代居民身份证原件到车站自动售票机换取纸质车票。
+        方式二：请持购票时所使用二代居民身份证原件到车站售票窗口或铁路客票代售点换取纸质车票。
+        方式三：在铁路客票代售点或自动售票机换取纸质车票时，如果购票时所使用的二代居民身份证不能识读，请持该二代居民身份证原件和订单号码E757718715到车站售票窗口换取纸质车票。
+        如您持二代身份证直接检票乘车后需报销凭证，可不晚于自乘车之日起31天内按上述方式换取纸质车票以供报销用。
+        温馨提示：请尽快换取纸质车票。
+        """
+        let realTickets = parse(subject: "网上购票系统-用户支付通知", bodyText: realBody,
+                                owner: "张三", mailDate: date(2013, 4, 11, 20))
+        let r = realTickets.first
+        check("real.count", realTickets.count == 1)
+        check("real.train", r?.trainNo == "T164")
+        check("real.route", r?.fromStation == "上海" && r?.toStation == "郑州")
+        check("real.date", r?.date == date(2013, 4, 29))
+        check("real.time", r?.departTimeText == "19:36")
+        check("real.coachSeat", r?.coach == "10车" && r?.seat == "091号")
+        check("real.class", r?.seatClass == "硬座")
+        check("real.price", r?.price == 128.5)
+        emit("PARSERTEST real " + realTickets.map {
+            "\($0.trainNo ?? "?") \($0.fromStation ?? "?")→\($0.toStation ?? "?") " +
+            "\($0.date.map { Fmt.dotDate.string(from: $0) } ?? "?") \($0.departTimeText ?? "?") " +
+            "\($0.coach ?? "?")\($0.seat ?? "?") \($0.seatClass ?? "?") \($0.price.map { String($0) } ?? "?")"
+        }.joined(separator: " ; "))
+
         // 现行格式回归:带年份日期 + 常规分隔符
         let newTickets = parse(subject: "12306 购票成功通知",
                                bodyText: "乘车人:1.张三,2026年09月30日 G4098 郑州东-上海虹桥 20:48开 07车02F号 二等座 ¥471.5",
