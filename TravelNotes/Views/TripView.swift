@@ -10,6 +10,8 @@ struct TripView: View {
     @State private var entryToDelete: TicketEntry?
     /// 当天行程的实时信息(检票口/晚点),按行程 id 索引
     @State private var liveInfos: [UUID: TrainLiveInfo] = [:]
+    /// 到达时刻(HH:mm),从经停时刻表取,按行程 id 索引
+    @State private var arriveTimes: [UUID: String] = [:]
 
     private var upcoming: [TicketEntry] {
         let start = Calendar.current.startOfDay(for: Date())
@@ -52,7 +54,8 @@ struct TripView: View {
                                         ForEach(group.items) { entry in
                                             NavigationLink(value: entry.id) {
                                                 UpcomingTripCard(entry: entry,
-                                                                 liveInfo: liveInfos[entry.id])
+                                                                 liveInfo: liveInfos[entry.id],
+                                                                 arriveTime: arriveTimes[entry.id])
                                             }
                                             .buttonStyle(.plain)
                                             .contextMenu {
@@ -71,7 +74,7 @@ struct TripView: View {
                         Spacer(minLength: 110)
                     }
                 }
-                .refreshable { await loadLive() }
+                .refreshable { await loadInfo() }
 
                 addButton
             }
@@ -124,18 +127,34 @@ struct TripView: View {
                 }
                 try? modelContext.save()
             }
-            await loadLive()
+            await loadInfo()
         }
     }
 
-    /// 拉取当天行程的检票口/晚点;未来行程不查(12306 未到出行日不公布)
-    private func loadLive() async {
-        for entry in upcoming where Calendar.current.isDateInToday(entry.date) {
+    /// 行程卡补充信息:到达时刻(全部行程,来自经停时刻表);检票口/晚点(仅当天,12306 未到出行日不公布)
+    private func loadInfo() async {
+        for entry in upcoming {
             guard let code = entry.trainNo, !code.isEmpty else { continue }
-            if let info = try? await TrainLiveService.shared.live(trainCode: code, date: entry.date) {
+            if arriveTimes[entry.id] == nil, let to = entry.toStation,
+               let stops = try? await TrainScheduleService.shared.stops(
+                   trainNo: code, fromStation: entry.fromStation ?? "",
+                   toStation: to, date: entry.date),
+               let stop = stops.first(where: { TrainLiveService.looseMatch($0.stationName, to) }),
+               stop.arriveTime != "----" {
+                arriveTimes[entry.id] = Self.hhmm(stop.arriveTime)
+            }
+            if Calendar.current.isDateInToday(entry.date),
+               let info = try? await TrainLiveService.shared.live(trainCode: code, date: entry.date) {
                 liveInfos[entry.id] = info
             }
         }
+    }
+
+    /// "13:22" 或 "1322" -> "13:22"
+    private static func hhmm(_ raw: String) -> String {
+        let digits = raw.filter(\.isNumber)
+        guard digits.count == 4 else { return raw }
+        return digits.prefix(2) + ":" + digits.suffix(2)
     }
 
     // MARK: 子视图
@@ -228,6 +247,8 @@ private struct UpcomingTripCard: View {
     let entry: TicketEntry
     /// 当天行程的实时信息(检票口/晚点)
     let liveInfo: TrainLiveInfo?
+    /// 到达时刻(HH:mm),来自经停时刻表
+    let arriveTime: String?
 
     private var color: Color { Theme.routeColor(from: entry.fromStation, to: entry.toStation) }
 
@@ -268,7 +289,8 @@ private struct UpcomingTripCard: View {
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(Theme.ticketInk.opacity(0.75))
                 if let depart = entry.departTime {
-                    Text(Fmt.clock.string(from: depart) + " 开")
+                    Text(Fmt.clock.string(from: depart) + " 开"
+                         + (arriveTime.map { " · \($0) 到" } ?? ""))
                         .font(.system(size: 12, weight: .medium))
                         .foregroundColor(Theme.ticketInk.opacity(0.75))
                 }
