@@ -112,9 +112,14 @@ enum MIME {
         }
     }
 
+    /// 头部与正文的分隔位置:兼容 CRLF 和裸 LF 的老邮件
+    static func headerEnd(in raw: Data) -> Range<Data.Index>? {
+        raw.range(of: Data("\r\n\r\n".utf8)) ?? raw.range(of: Data("\n\n".utf8))
+    }
+
     /// 从原始邮件(HEADER+BODY)提取正文文本:优先 text/html,其次 text/plain
     static func extractBody(raw: Data) -> String {
-        guard let headerEnd = raw.range(of: Data("\r\n\r\n".utf8)) else {
+        guard let headerEnd = headerEnd(in: raw) else {
             return String(decoding: raw, as: UTF8.self)
         }
         let headerData = raw.subdata(in: raw.startIndex..<headerEnd.lowerBound)
@@ -134,7 +139,8 @@ enum MIME {
                 let text = extractBody(raw: part)
                 if !text.isEmpty { return text }
             }
-            return ""
+            // 拆不出文本(怪异 boundary)时整段按文本兜底解码,别把正文丢了
+            return stripHTML(decodeBody(bodyData, encoding: transferEncoding, contentType: contentType))
         }
         if contentType.lowercased().contains("text/html") {
             return stripHTML(decodeBody(bodyData, encoding: transferEncoding, contentType: contentType))
@@ -147,7 +153,7 @@ enum MIME {
 
     /// 调试用:原始邮件头前几行
     static func debugHeaders(raw: Data) -> String {
-        guard let headerEnd = raw.range(of: Data("\r\n\r\n".utf8)) else { return "(no header end)" }
+        guard let headerEnd = headerEnd(in: raw) else { return "(no header end)" }
         return String(decoding: raw.subdata(in: raw.startIndex..<min(headerEnd.lowerBound, raw.startIndex + 600)), as: UTF8.self)
     }
 
@@ -179,7 +185,8 @@ enum MIME {
     }
 
     private static func extractBoundary(_ contentType: String) -> String? {
-        guard let range = contentType.range(of: "boundary=") else { return nil }
+        // 参数名大小写和空格不固定(老邮件常见 BOUNDARY = "xxx")
+        guard let range = contentType.range(of: "boundary\\s*=\\s*", options: [.regularExpression, .caseInsensitive]) else { return nil }
         var value = String(contentType[range.upperBound...]).trimmingCharacters(in: .whitespaces)
         if value.hasPrefix("\"") {
             guard let end = value.dropFirst().firstIndex(of: "\"") else { return nil }
@@ -191,7 +198,7 @@ enum MIME {
     }
 
     private static func extractCharset(_ contentType: String) -> String {
-        guard let range = contentType.range(of: "charset=") else { return "utf-8" }
+        guard let range = contentType.range(of: "charset\\s*=\\s*", options: [.regularExpression, .caseInsensitive]) else { return "utf-8" }
         var value = String(contentType[range.upperBound...]).trimmingCharacters(in: .whitespaces)
         if value.hasPrefix("\"") {
             value = String(value.dropFirst())

@@ -110,21 +110,9 @@ final class MailSyncEngine: ObservableObject {
             }
 
             statusText = "打开邮箱…"
-            var known = Self.existingMessageIDs(context: context)
 
             // 阶段一:多文件夹扫描 —— 扫全部文件夹(老邮件可能被归档到自建文件夹,名字里不一定带 12306)
-            struct FetchedMail {
-                let uid: String
-                let folder: String
-                let mailDate: Date?
-                let subject: String
-                let bodyText: String
-                let orderNumber: String?
-                let isRefund: Bool
-                let isChange: Bool
-            }
             var mails: [FetchedMail] = []
-            var doneCount = 0
             var folders = ["INBOX"]
             let listRecords = try await resilient("list") { c in try await c.command("LIST \"\" \"*\"") }
             let listRegex = try? NSRegularExpression(pattern: "\"([^\"]+)\"\\s*$")
@@ -143,55 +131,26 @@ final class MailSyncEngine: ObservableObject {
                 ? "01-Jan-2010"
                 : Self.imapDate(lastSyncDate!)
 
-            let mailDateFormatter = DateFormatter()
-            mailDateFormatter.locale = Locale(identifier: "en_US_POSIX")
-            mailDateFormatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss ZZZZZ"
-
-            for folder in folders {
-                statusText = "扫描 \(folder == "INBOX" ? "收件箱" : "12306 文件夹")…"
-                let uids: [String]
+            for (index, folder) in folders.enumerated() {
+                let folderLabel = folder == "INBOX" ? "收件箱" : folder
+                statusText = "扫描 \(folderLabel)(\(index + 1)/\(folders.count))…"
                 do {
-                    let searchRecords = try await resilient("search \(folder)") { c in
+                    let uids = try await resilient("uids \(folder)") { c in
                         try await ensureSelected(c, folder)
-                        return try await c.command("UID SEARCH SINCE \(since) FROM \"12306\"")
+                        return try await Self.discoverUIDs(c, folder: folder, since: since, fullHistory: fullHistory)
                     }
-                    uids = Self.parseSearchRecords(searchRecords)
+                    guard !uids.isEmpty else { continue }
+                    let fetched = try await resilient("fetch \(folder)") { c in
+                        try await ensureSelected(c, folder)
+                        return try await Self.fetchMails(c, folder: folder, uids: uids) { done, total in
+                            Task { @MainActor in self.statusText = "拉取邮件 \(done)/\(total)…" }
+                        }
+                    }
+                    mails.append(contentsOf: fetched)
+                    Self.trace("folder \(folder) fetched=\(fetched.count)")
                 } catch {
-                    Self.trace("select \(folder) failed")
+                    Self.trace("folder \(folder) failed: \(error)")
                     continue
-                }
-                guard !uids.isEmpty else { continue }
-                for chunk in Self.chunked(uids, size: 20) {
-                    let query = chunk.joined(separator: ",")
-                    let records = try await resilient("fetch \(folder)") { c in
-                        try await ensureSelected(c, folder)
-                        return try await c.command("UID FETCH \(query) (BODY.PEEK[])", timeout: 90)
-                    }
-                    doneCount += chunk.count
-                    statusText = "拉取邮件 \(doneCount)…"
-                    Self.trace("batch \(folder) \(doneCount)")
-                    for record in records where record.text.contains("FETCH") {
-                        guard let raw = record.literals.first else { continue }
-                        let messageId = Self.extractHeader("message-id", raw: raw) ?? "raw-\(record.text.prefix(24))"
-                        guard !known.contains(messageId) else { continue }
-                        known.insert(messageId)
-                        let subject = MIME.decodeEncodedWords(Self.extractHeader("subject", raw: raw) ?? "")
-                        let from = MIME.decodeEncodedWords(Self.extractHeader("from", raw: raw) ?? "")
-                        // 退票/退单/改签邮件也要收集(分别用于退票集合与改签原票作废)
-                        let isRefund = subject.contains("退票") || subject.contains("退单")
-                        let isChange = subject.contains("改签")
-                        let bodyText = MIME.stripHTML(MIME.extractBody(raw: raw))
-                        // 12306 也发营销邮件(同样带车次站名),必须像"购票通知"才收,否则拼出没去过的假行程
-                        guard isRefund || isChange ||
-                                (TicketMailParser.looksLikeTicketMail(from: from, subject: subject)
-                                 && TicketMailParser.looksLikePurchase(subject: subject, bodyText: bodyText)) else { continue }
-                        let uid = Self.extractUID(record.text) ?? "uid-\(doneCount)-\(mails.count)"
-                        let mailDate = Self.extractMailDate(raw, formatter: mailDateFormatter)
-                        mails.append(FetchedMail(uid: uid, folder: folder, mailDate: mailDate,
-                                                 subject: subject, bodyText: bodyText,
-                                                 orderNumber: Self.extractOrderNumber(bodyText),
-                                                 isRefund: isRefund, isChange: isChange))
-                    }
                 }
             }
             mails.sort { ($0.mailDate ?? .distantPast) < ($1.mailDate ?? .distantPast) }
@@ -275,12 +234,104 @@ final class MailSyncEngine: ObservableObject {
         }
     }
 
+    // MARK: 拉取与解码(sync 与自检共用同一路径,自检测的就是真实代码)
+
+    struct FetchedMail: Sendable {
+        let uid: String
+        let folder: String
+        let mailDate: Date?
+        let subject: String
+        let bodyText: String
+        let orderNumber: String?
+        let isRefund: Bool
+        let isChange: Bool
+    }
+
+    /// 邮件 UID 发现:增量走 SEARCH;全量不依赖 SEARCH(老邮件 QQ 的 SEARCH 可能查不到),
+    /// 按 UID 范围拉头部自己筛发件人/主题
+    nonisolated static func discoverUIDs(_ client: IMAPClient, folder: String, since: String, fullHistory: Bool) async throws -> [String] {
+        if !fullHistory {
+            let records = try await client.command("UID SEARCH SINCE \(since) FROM \"12306\"")
+            return parseSearchRecords(records)
+        }
+        let allRecords = try await client.command("UID FETCH 1:* (UID)", timeout: 90)
+        let allUIDs = allRecords.compactMap { extractUID($0.text) }
+        var kept: [String] = []
+        for chunk in chunked(allUIDs, size: 50) {
+            let records = try await client.command(
+                "UID FETCH \(chunk.joined(separator: ",")) (BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID)])",
+                timeout: 90)
+            for record in records where record.text.contains("FETCH") {
+                guard let raw = record.literals.first, let uid = extractUID(record.text) else { continue }
+                let subject = MIME.decodeEncodedWords(extractHeader("subject", raw: raw) ?? "")
+                let from = MIME.decodeEncodedWords(extractHeader("from", raw: raw) ?? "")
+                let isRefundOrChange = subject.contains("退票") || subject.contains("退单") || subject.contains("改签")
+                if isRefundOrChange || TicketMailParser.looksLikeTicketMail(from: from, subject: subject) {
+                    kept.append(uid)
+                }
+            }
+        }
+        return kept
+    }
+
+    /// 批量拉取完整邮件;解码放后台线程,全量同步几百封时不把 UI 卡死
+    nonisolated static func fetchMails(_ client: IMAPClient, folder: String, uids: [String],
+                                       progress: @escaping @Sendable (_ done: Int, _ total: Int) -> Void) async throws -> [FetchedMail] {
+        var result: [FetchedMail] = []
+        var done = 0
+        for chunk in chunked(uids, size: 20) {
+            let records = try await client.command("UID FETCH \(chunk.joined(separator: ",")) (BODY.PEEK[])", timeout: 90)
+            done += chunk.count
+            progress(done, uids.count)
+            let decoded = await Task.detached(priority: .userInitiated) {
+                decodeRecords(records, folder: folder)
+            }.value
+            result.append(contentsOf: decoded)
+        }
+        return result
+    }
+
+    /// 解码 + 筛选一批 FETCH 响应(纯 CPU,放后台线程)
+    nonisolated static func decodeRecords(_ records: [IMAPRecord], folder: String) -> [FetchedMail] {
+        var out: [FetchedMail] = []
+        for record in records where record.text.contains("FETCH") {
+            guard let raw = record.literals.first else { continue }
+            let subject = MIME.decodeEncodedWords(extractHeader("subject", raw: raw) ?? "")
+            let from = MIME.decodeEncodedWords(extractHeader("from", raw: raw) ?? "")
+            // 退票/退单/改签邮件也要收集(分别用于退票集合与改签原票作废)
+            let isRefund = subject.contains("退票") || subject.contains("退单")
+            let isChange = subject.contains("改签")
+            let bodyText = MIME.stripHTML(MIME.extractBody(raw: raw))
+            // 12306 也发营销邮件(同样带车次站名),必须像"购票通知"才收,否则拼出没去过的假行程
+            guard isRefund || isChange ||
+                    (TicketMailParser.looksLikeTicketMail(from: from, subject: subject)
+                     && TicketMailParser.looksLikePurchase(subject: subject, bodyText: bodyText)) else { continue }
+            out.append(FetchedMail(uid: extractUID(record.text) ?? "-",
+                                   folder: folder,
+                                   mailDate: extractMailDate(raw, formatter: mailDateFormatter()),
+                                   subject: subject,
+                                   bodyText: bodyText,
+                                   orderNumber: extractOrderNumber(bodyText),
+                                   isRefund: isRefund,
+                                   isChange: isChange))
+        }
+        return out
+    }
+
+    nonisolated static func mailDateFormatter() -> DateFormatter {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "EEE, dd MMM yyyy HH:mm:ss ZZZZZ"
+        return f
+    }
+
     // MARK: 自检(仅 -MailSyncTest 启动参数;支持本地 mock 或真实 QQ 邮箱)
 
     static func runSelfTestIfNeeded() async {
         let args = ProcessInfo.processInfo.arguments
         guard args.contains("-MailSyncTest") else { return }
         var lines: [String] = []
+        var fetched: [FetchedMail] = []
         do {
             let host = Self.value(of: "-MailHost", in: args) ?? "imap.qq.com"
             let defaultPort = host == "127.0.0.1" ? "8025" : "993"
@@ -288,8 +339,6 @@ final class MailSyncEngine: ObservableObject {
             let useTLS = host != "127.0.0.1"
             let user = Self.value(of: "-MailUser", in: args) ?? "test@qq.com"
             let pass = Self.value(of: "-MailPass", in: args) ?? "authcode123"
-            let since = Self.value(of: "-MailSince", in: args)
-                ?? Self.imapDate(Calendar.current.date(byAdding: .day, value: -3650, to: Date())!)
 
             let client = IMAPClient()
             try await client.connect(host: host, port: port, useTLS: useTLS)
@@ -297,49 +346,63 @@ final class MailSyncEngine: ObservableObject {
             _ = try await client.command("ID (\"name\" \"TrainTicketDiary\" \"version\" \"1.0\")")
             _ = try await client.command("LOGIN \"\(Self.escape(user))\" \"\(Self.escape(pass))\"")
             lines.append("login ok")
-            _ = try await client.command("SELECT INBOX")
-            let search = try await client.command("UID SEARCH SINCE \(since) FROM \"12306\"")
-            let uids = Self.parseSearchRecords(search)
-            lines.append("uids=\(uids.count)")
-            for uid in uids {
-                let records = try await client.command("UID FETCH \(uid) (BODY.PEEK[])", timeout: 90)
-                guard let record = records.first(where: { $0.text.contains("FETCH") }),
-                      let raw = record.literals.first else { continue }
-                let subject = MIME.decodeEncodedWords(Self.extractHeader("subject", raw: raw) ?? "")
-                let from = MIME.decodeEncodedWords(Self.extractHeader("from", raw: raw) ?? "")
-                lines.append("--- uid=\(uid) subject=\(subject)")
-                let text = MIME.stripHTML(MIME.extractBody(raw: raw))
-                if subject.contains("改签") {
-                    lines.append("GSIGN_START uid=\(uid)")
-                    for chunk in text.chunks(ofLength: 260) { lines.append("GS|\(chunk)") }
-                }
-                let debugDateFormatter = DateFormatter()
-                debugDateFormatter.locale = Locale(identifier: "en_US_POSIX")
-                debugDateFormatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss ZZZZZ"
-                let tickets = TicketMailParser.parse(subject: subject, bodyText: text,
-                                                     mailDate: Self.extractMailDate(raw, formatter: debugDateFormatter))
-                lines.append("    parsed=\(tickets.count)")
-                for t in tickets {
-                    lines.append("    \(t.trainNo ?? "?") \(t.fromStation ?? "?")→\(t.toStation ?? "?") \(t.date.map { Fmt.dotDate.string(from: $0) } ?? "?") \(t.seatClass ?? "?") \(t.price.map { String($0) } ?? "?")")
-                    if let fromStation = t.fromStation,
-                       let range = text.range(of: fromStation) {
-                        let start = text.index(range.lowerBound, offsetBy: -80, limitedBy: text.startIndex) ?? text.startIndex
-                        let end = text.index(range.lowerBound, offsetBy: 120, limitedBy: text.endIndex) ?? text.endIndex
-                        lines.append("    WIN|\(text[start..<end])")
-                    }
-                    if (t.toStation?.contains("香港") ?? false) || (t.fromStation?.contains("香港") ?? false),
-                       let range = text.range(of: "香港") {
-                        let start = text.index(range.lowerBound, offsetBy: -120, limitedBy: text.startIndex) ?? text.startIndex
-                        let end = text.index(range.lowerBound, offsetBy: 120, limitedBy: text.endIndex) ?? text.endIndex
-                        lines.append("    HK|\(text[start..<end])")
-                    }
-                }
+
+            // 与 sync 完全一致的路径:全部文件夹 → 全量 UID 头部筛选 → 批量拉取解码
+            var folders = ["INBOX"]
+            let listRecords = try await client.command("LIST \"\" \"*\"")
+            let listRegex = try? NSRegularExpression(pattern: "\"([^\"]+)\"\\s*$")
+            for record in listRecords where record.text.hasPrefix("* LIST") {
+                guard !record.text.contains("\\NoSelect"),
+                      let regex = listRegex,
+                      let match = regex.firstMatch(in: record.text, range: NSRange(record.text.startIndex..., in: record.text)),
+                      let range = Range(match.range(at: 1), in: record.text) else { continue }
+                let name = String(record.text[range])
+                if name != "INBOX", !folders.contains(name) { folders.append(name) }
+            }
+            lines.append("folders=\(folders.joined(separator: ","))")
+
+            for folder in folders {
+                _ = try await client.command("SELECT \"\(folder)\"")
+                let uids = try await Self.discoverUIDs(client, folder: folder, since: "01-Jan-2010", fullHistory: true)
+                lines.append("folder \(folder) candidate-uids=\(uids.joined(separator: ","))")
+                fetched.append(contentsOf: try await Self.fetchMails(client, folder: folder, uids: uids) { _, _ in })
             }
             client.disconnect()
+
+            for mail in fetched {
+                lines.append("--- \(mail.folder) uid=\(mail.uid) subject=\(mail.subject) date=\(mail.mailDate.map { "\($0)" } ?? "nil")")
+                let tickets = TicketMailParser.parse(subject: mail.subject, bodyText: mail.bodyText, mailDate: mail.mailDate)
+                for t in tickets {
+                    lines.append("    \(t.trainNo ?? "?") \(t.fromStation ?? "?")→\(t.toStation ?? "?") \(t.date.map { Fmt.dotDate.string(from: $0) } ?? "?") \(t.departTimeText ?? "?") \(t.seatClass ?? "?") \(t.price.map { String($0) } ?? "?")")
+                }
+            }
+
+            // 本地 mock(mock_imap.py)的预期结果,直接给端到端结论
+            if host == "127.0.0.1" {
+                let tickets = fetched.flatMap {
+                    TicketMailParser.parse(subject: $0.subject, bodyText: $0.bodyText, mailDate: $0.mailDate)
+                }
+                func check(_ name: String, _ ok: Bool) {
+                    lines.append((ok ? "E2EPASS " : "E2EFAIL ") + name)
+                }
+                let day2013 = Calendar.current.date(from: DateComponents(year: 2013, month: 4, day: 29))
+                check("old.T164", tickets.contains {
+                    $0.trainNo == "T164" && $0.fromStation == "上海" && $0.toStation == "郑州" && $0.date == day2013
+                })
+                check("new.G4098", tickets.contains {
+                    $0.trainNo == "G4098" && $0.fromStation == "郑州东" && $0.toStation == "上海虹桥"
+                })
+                check("promo.blocked", !tickets.contains {
+                    $0.trainNo == "C1234" || $0.fromStation == "武汉" || $0.toStation == "汉口"
+                })
+            }
         } catch {
             lines.append("ERROR: \(error.localizedDescription)")
         }
-        try? lines.joined(separator: "\n").write(to: URL(fileURLWithPath: "/tmp/tn_sync.txt"), atomically: true, encoding: .utf8)
+        let out = lines.joined(separator: "\n")
+        try? out.write(to: URL(fileURLWithPath: "/tmp/tn_sync.txt"), atomically: true, encoding: .utf8)
+        try? out.write(to: FileManager.default.temporaryDirectory.appendingPathComponent("tn_sync.txt"),
+                       atomically: true, encoding: .utf8)
         exit(0)
     }
 
@@ -449,13 +512,13 @@ final class MailSyncEngine: ObservableObject {
     }
 
     /// 解析邮件 Date 头(用于跨文件夹的时序排序)
-    static func extractMailDate(_ raw: Data, formatter: DateFormatter) -> Date? {
+    nonisolated static func extractMailDate(_ raw: Data, formatter: DateFormatter) -> Date? {
         guard let line = extractHeader("date", raw: raw) else { return nil }
         return formatter.date(from: line) ?? formatter.date(from: line.replacingOccurrences(of: "  ", with: " "))
     }
 
     /// 从正文提取 12306 订单号码,用于关联改签前后的邮件
-    static func extractOrderNumber(_ bodyText: String) -> String? {
+    nonisolated static func extractOrderNumber(_ bodyText: String) -> String? {
         guard let regex = try? NSRegularExpression(pattern: "订单号码\\s*([A-Z0-9]{6,16})") else { return nil }
         guard let match = regex.firstMatch(in: bodyText, range: NSRange(bodyText.startIndex..., in: bodyText)),
               let range = Range(match.range(at: 1), in: bodyText) else { return nil }
@@ -463,14 +526,14 @@ final class MailSyncEngine: ObservableObject {
     }
 
     /// 从 FETCH 响应头里取 UID
-    static func extractUID(_ text: String) -> String? {
+    nonisolated static func extractUID(_ text: String) -> String? {
         guard let regex = try? NSRegularExpression(pattern: "UID (\\d+)"),
               let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
               let range = Range(match.range(at: 1), in: text) else { return nil }
         return String(text[range])
     }
 
-    static func chunked(_ array: [String], size: Int) -> [[String]] {
+    nonisolated static func chunked(_ array: [String], size: Int) -> [[String]] {
         guard size > 0 else { return [array] }
         return stride(from: 0, to: array.count, by: size).map {
             Array(array[$0..<min($0 + size, array.count)])
@@ -494,7 +557,7 @@ final class MailSyncEngine: ObservableObject {
     }
 
     /// 从 "UID SEARCH 101 102" 记录中取出 UID 列表
-    static func parseSearchRecords(_ records: [IMAPRecord]) -> [String] {
+    nonisolated static func parseSearchRecords(_ records: [IMAPRecord]) -> [String] {
         guard let search = records.first(where: { $0.text.hasPrefix("* SEARCH") }) else { return [] }
         return search.text
             .split(separator: " ")
@@ -504,11 +567,12 @@ final class MailSyncEngine: ObservableObject {
     }
 
     /// 从原始邮件中提取单个头部字段(先做折叠行展开)
-    static func extractHeader(_ name: String, raw: Data) -> String? {
-        guard let headerEnd = raw.range(of: Data("\r\n\r\n".utf8)) else { return nil }
+    nonisolated static func extractHeader(_ name: String, raw: Data) -> String? {
+        guard let headerEnd = MIME.headerEnd(in: raw) else { return nil }
         let headerData = raw.subdata(in: raw.startIndex..<headerEnd.lowerBound)
         let headers = String(decoding: headerData, as: UTF8.self)
             .replacingOccurrences(of: "\r\n ", with: " ")
+            .replacingOccurrences(of: "\r\n\t", with: " ")
             .replacingOccurrences(of: "\n ", with: " ")
         for line in headers.components(separatedBy: .newlines) {
             let lower = line.lowercased()

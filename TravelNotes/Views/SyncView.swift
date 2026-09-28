@@ -93,16 +93,18 @@ struct SyncView: View {
                         .foregroundColor(.secondary)
                 }
             }
-            Button {
-                fieldFocused = false
-                saveAccountIfNeeded()
-                Task { await engine.sync(context: modelContext) }
-            } label: {
-                HStack {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                    Text(engine.running ? "同步中…" : "立即同步")
+                Button {
+                    fieldFocused = false
+                    saveAccountIfNeeded()
+                    Task { await engine.sync(context: modelContext) }
+                } label: {
+                    HStack {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                        // 同步中把实时进度直接放在按钮上,一眼能看到进行到哪
+                        Text(engine.running ? engine.statusText : "立即同步")
+                            .lineLimit(1)
+                    }
                 }
-            }
             .disabled(engine.running || email.isEmpty || authCode.isEmpty)
             Button {
                 fieldFocused = false
