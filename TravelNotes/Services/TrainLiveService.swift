@@ -58,7 +58,7 @@ final class TrainLiveService {
     private var cache: [String: (info: TrainLiveInfo, at: Date)] = [:]
     // 预计检票口缓存
     private var estCache: [String: (value: String, at: Date)] = [:]
-    private let cacheTTL: TimeInterval = 180
+    private let cacheTTL: TimeInterval = 300
     private let queue = DispatchQueue(label: "rail.trainLive")
 
     /// 查询车次当日运行信息;仅出行当日有检票口/晚点数据
