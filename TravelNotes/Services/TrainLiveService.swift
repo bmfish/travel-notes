@@ -56,8 +56,10 @@ final class TrainLiveService {
 
     // 实时数据短时缓存,避免刷新时反复请求
     private var cache: [String: (info: TrainLiveInfo, at: Date)] = [:]
-    // 预计检票口缓存
-    private var estCache: [String: (value: String, at: Date)] = [:]
+    // 已查到的检票口缓存到当天结束(正式值),接口偶尔回 "--" 也不丢
+    private var gateOfDay: [String: (value: String, until: Date)] = [:]
+    // 预计检票口同样缓存到当天结束
+    private var estCache: [String: (value: String, until: Date)] = [:]
     private let cacheTTL: TimeInterval = 300
     private let queue = DispatchQueue(label: "rail.trainLive")
 
@@ -68,7 +70,7 @@ final class TrainLiveService {
         let key = "\(code)|\(day)"
         if let hit = queue.sync(execute: { cache[key] }),
            Date().timeIntervalSince(hit.at) < cacheTTL {
-            return hit.info
+            return patchGates(hit.info, code: code, day: day)
         }
         // 参数是 URL 查询串 + POST 空 body(必须带 Content-Length)
         let url = URL(string: "https://mobile.12306.cn/wxxcx/wechat/main/travelServiceQrcodeTrainInfo"
@@ -81,7 +83,41 @@ final class TrainLiveService {
         if !info.stops.isEmpty {
             queue.sync { cache[key] = (info, Date()) }
         }
-        return info
+        pinGates(info, code: code, day: day)
+        return patchGates(info, code: code, day: day)
+    }
+
+    /// 已公布的检票口记住到当天结束
+    private func pinGates(_ info: TrainLiveInfo, code: String, day: String) {
+        let until = Date().addingTimeInterval(Self.secondsUntilDayEnd())
+        queue.sync {
+            for s in info.stops where s.gateDisplay != nil {
+                gateOfDay["\(code)|\(day)|\(s.stationName)"] = (s.wicket, until)
+            }
+        }
+    }
+
+    /// 已记住的检票口补上接口临时缺失的值
+    private func patchGates(_ info: TrainLiveInfo, code: String, day: String) -> TrainLiveInfo {
+        let pinned = queue.sync(execute: { gateOfDay })
+        var patched = false
+        let stops = info.stops.map { s -> TrainLiveStop in
+            if s.gateDisplay == nil, let hit = pinned["\(code)|\(day)|\(s.stationName)"], Date() < hit.until {
+                patched = true
+                return TrainLiveStop(stationName: s.stationName, wicket: hit.value,
+                                     exit: s.exit, waitingRoom: s.waitingRoom, delayMinutes: s.delayMinutes)
+            }
+            return s
+        }
+        return patched ? TrainLiveInfo(trainCode: info.trainCode, date: info.date, stops: stops) : info
+    }
+
+    /// 当天剩余秒数
+    private static func secondsUntilDayEnd() -> TimeInterval {
+        let cal = Calendar.current
+        let end = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: Date()))
+            ?? Date().addingTimeInterval(3600)
+        return max(60, end.timeIntervalSinceNow)
     }
 
     /// 站名宽松比较:"郑州东" 与 "郑州东站" 视为同站
@@ -96,13 +132,12 @@ final class TrainLiveService {
         let code = trainCode.trimmingCharacters(in: .whitespaces).uppercased()
         let day = Self.dayFormatter.string(from: date)
         let key = "est|\(code)|\(day)|\(station)"
-        if let hit = queue.sync(execute: { estCache[key] }),
-           Date().timeIntervalSince(hit.at) < cacheTTL {
+        if let hit = queue.sync(execute: { estCache[key] }), Date() < hit.until {
             return hit.value
         }
         let result = try? await computeEstimatedGate(code: code, day: day, station: station)
         if let result {
-            queue.sync { estCache[key] = (result, Date()) }
+            queue.sync { estCache[key] = (result, Date().addingTimeInterval(Self.secondsUntilDayEnd())) }
         }
         return result
     }
