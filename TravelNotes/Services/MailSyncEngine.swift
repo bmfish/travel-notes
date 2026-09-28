@@ -171,7 +171,7 @@ final class MailSyncEngine: ObservableObject {
             // 阶段二:退票/退单邮件 → 已退票行程集合
             var refundKeys = Set<String>()
             for mail in mails where mail.isRefund {
-                for ticket in TicketMailParser.parse(subject: mail.subject, bodyText: mail.bodyText, owner: owner) {
+                for ticket in TicketMailParser.parse(subject: mail.subject, bodyText: mail.bodyText, owner: owner, mailDate: mail.mailDate) {
                     refundKeys.insert(Self.tripKey(trainNo: ticket.trainNo, from: ticket.fromStation,
                                                    to: ticket.toStation, date: ticket.date))
                 }
@@ -187,7 +187,7 @@ final class MailSyncEngine: ObservableObject {
             }
             var changeValidKeys = Set<String>()
             for (order, mail) in lastChangeByOrder {
-                for ticket in TicketMailParser.parse(subject: mail.subject, bodyText: mail.bodyText, owner: owner) {
+                for ticket in TicketMailParser.parse(subject: mail.subject, bodyText: mail.bodyText, owner: owner, mailDate: mail.mailDate) {
                     changeValidKeys.insert(Self.tripKey(trainNo: ticket.trainNo, from: ticket.fromStation,
                                                         to: ticket.toStation, date: ticket.date))
                 }
@@ -196,7 +196,7 @@ final class MailSyncEngine: ObservableObject {
             for mail in mails where !mail.isChange && !mail.isRefund {
                 // 该订单后来改签过,这封邮件描述的是改签前的原票 → 作废
                 guard let order = mail.orderNumber, lastChangeByOrder[order] != nil else { continue }
-                for ticket in TicketMailParser.parse(subject: mail.subject, bodyText: mail.bodyText, owner: owner) {
+                for ticket in TicketMailParser.parse(subject: mail.subject, bodyText: mail.bodyText, owner: owner, mailDate: mail.mailDate) {
                     invalidatedKeys.insert(Self.tripKey(trainNo: ticket.trainNo, from: ticket.fromStation,
                                                         to: ticket.toStation, date: ticket.date))
                 }
@@ -212,7 +212,7 @@ final class MailSyncEngine: ObservableObject {
                     // 同订单多次改签,只有最后一次的新票有效
                     guard let order = mail.orderNumber, lastChangeByOrder[order]?.uid == mail.uid else { continue }
                 }
-                for ticket in TicketMailParser.parse(subject: mail.subject, bodyText: mail.bodyText, owner: owner) {
+                for ticket in TicketMailParser.parse(subject: mail.subject, bodyText: mail.bodyText, owner: owner, mailDate: mail.mailDate) {
                     let tripKey = Self.tripKey(trainNo: ticket.trainNo, from: ticket.fromStation,
                                                to: ticket.toStation, date: ticket.date)
                     guard !knownTripKeys.contains(tripKey) else { continue }
@@ -282,7 +282,11 @@ final class MailSyncEngine: ObservableObject {
                     lines.append("GSIGN_START uid=\(uid)")
                     for chunk in text.chunks(ofLength: 260) { lines.append("GS|\(chunk)") }
                 }
-                let tickets = TicketMailParser.parse(subject: subject, bodyText: text)
+                let debugDateFormatter = DateFormatter()
+                debugDateFormatter.locale = Locale(identifier: "en_US_POSIX")
+                debugDateFormatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss ZZZZZ"
+                let tickets = TicketMailParser.parse(subject: subject, bodyText: text,
+                                                     mailDate: Self.extractMailDate(raw, formatter: debugDateFormatter))
                 lines.append("    parsed=\(tickets.count)")
                 for t in tickets {
                     lines.append("    \(t.trainNo ?? "?") \(t.fromStation ?? "?")→\(t.toStation ?? "?") \(t.date.map { Fmt.dotDate.string(from: $0) } ?? "?") \(t.seatClass ?? "?") \(t.price.map { String($0) } ?? "?")")

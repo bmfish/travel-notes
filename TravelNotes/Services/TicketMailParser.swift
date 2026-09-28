@@ -28,7 +28,7 @@ enum TicketMailParser {
 
     // MARK: 解析
 
-    static func parse(subject: String, bodyText: String, owner: String? = nil) -> [ParsedTicket] {
+    static func parse(subject: String, bodyText: String, owner: String? = nil, mailDate: Date? = nil) -> [ParsedTicket] {
         var text = bodyText
         // 截掉 12306 邮件尾部的"温馨提示/退票规则"样板文字,防止拼出假行程
         for marker in ["温馨提示", "退票规则", "铁路旅客禁止"] {
@@ -47,7 +47,6 @@ enum TicketMailParser {
 
         let pairMatches = stationPairMatches(in: text)
         let stationHits = findStations(in: text)
-        let dateMatches = allMatches(of: "20\\d{2}\\s*[年-]\\s*\\d{1,2}\\s*[月-]\\s*\\d{1,2}\\s*日?", in: text)
         let timeMatches = allMatches(of: "([01]?\\d|2[0-3]):[0-5]\\d", in: text)
 
         var seen = Set<String>()
@@ -89,8 +88,8 @@ enum TicketMailParser {
                 if uniqueNames.count >= 1 { ticket.fromStation = uniqueNames[0] }
                 if uniqueNames.count >= 2 { ticket.toStation = uniqueNames[1] }
             }
-            // 日期:取离车次号最近的日期
-            if let d = nearest(dateMatches, to: p, in: text), let date = parseDate(d.text) {
+            // 日期:取离车次号最近的日期(老邮件无年份时按发件时间推断)
+            if let date = nearestDate(in: text, to: p, mailDate: mailDate) {
                 ticket.date = date
             }
             // 时刻:最近的两个时间
@@ -172,7 +171,8 @@ enum TicketMailParser {
         let names = StationDirectory.shared.stations.map(\.n).sorted { $0.count > $1.count }
         guard !names.isEmpty else { return nil }
         let alternation = names.map { NSRegularExpression.escapedPattern(for: $0) }.joined(separator: "|")
-        let pattern = "((?:\(alternation))站?)\\s*[-—－–—至到~→＞>]{1,3}\\s*((?:\(alternation))站?)"
+        // 分隔符含汉字「一」:2015 年前的老邮件用"上海一郑州"当破折号
+        let pattern = "((?:\(alternation))站?)\\s*[-—－–—至到~→＞>一]{1,3}\\s*((?:\(alternation))站?)"
         return try? NSRegularExpression(pattern: pattern)
     }()
 
@@ -193,7 +193,8 @@ enum TicketMailParser {
 
     /// 邮件正文的编号乘车人项:"1.张三," / "1、张三," -> (位置, 姓名)
     private static func passengerItems(in text: String) -> [(pos: String.Index, name: String)] {
-        guard let regex = try? NSRegularExpression(pattern: "\\d{1,2}\\s*[.、．]\\s*([\u{4e00}-\u{9fa5}]{2,4})\u{FF0C}") else { return [] }
+        // 结尾逗号全角半角都要认:老邮件用的是半角逗号
+        guard let regex = try? NSRegularExpression(pattern: "\\d{1,2}\\s*[.、．]\\s*([\u{4e00}-\u{9fa5}]{2,4})[\u{FF0C},]") else { return [] }
         var items: [(pos: String.Index, name: String)] = []
         let full = NSRange(text.startIndex..., in: text)
         regex.enumerateMatches(in: text, range: full) { match, _, _ in
@@ -209,15 +210,58 @@ enum TicketMailParser {
     }
 
     private static func parseDate(_ s: String) -> Date? {
-        let digits = s.compactMap { $0.isNumber ? $0 : nil }
-        guard digits.count >= 8 else { return nil }
+        guard let r = try? NSRegularExpression(pattern: "(20\\d{2})\\s*[年\\-/.]\\s*(\\d{1,2})\\s*[月\\-/.]\\s*(\\d{1,2})") else { return nil }
+        guard let m = r.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)),
+              let yR = Range(m.range(at: 1), in: s),
+              let mR = Range(m.range(at: 2), in: s),
+              let dR = Range(m.range(at: 3), in: s),
+              let year = Int(s[yR]), let month = Int(s[mR]), let day = Int(s[dR]) else { return nil }
         var comps = DateComponents()
-        let y = Int(String(digits[0..<4]))
-        let m = Int(String(digits[4..<6]))
-        let d = Int(String(digits[6..<8]))
-        guard let year = y, let month = m, let day = d else { return nil }
         comps.year = year; comps.month = month; comps.day = day
         return Calendar.current.date(from: comps)
+    }
+
+    /// 乘车日期:取离车次号最近的日期。完整"2013年04月29日"直接解析;
+    /// 2015 年前的老邮件只写"04月29日"时,按发件时间推断年份。
+    private static func nearestDate(in text: String, to position: String.Index, mailDate: Date?) -> Date? {
+        let full = allMatches(of: "20\\d{2}\\s*[年\\-/.]\\s*\\d{1,2}\\s*[月\\-/.]\\s*\\d{1,2}\\s*日?", in: text)
+        // 裸日期可能是完整日期的尾段("2013年04月11日"里的"04月11日"),排除重叠
+        let bare = allMatches(of: "\\d{1,2}\\s*月\\s*\\d{1,2}\\s*日", in: text)
+            .filter { b in !full.contains { $0.range.overlaps(b.range) } }
+        var candidates: [(dist: Int, date: Date)] = []
+        for hit in full {
+            if let d = parseDate(hit.text) {
+                candidates.append((offsetDistance(hit.range.lowerBound, position, text), d))
+            }
+        }
+        for hit in bare {
+            if let d = resolveMonthDay(hit.text, mailDate: mailDate) {
+                candidates.append((offsetDistance(hit.range.lowerBound, position, text), d))
+            }
+        }
+        return candidates.min { $0.dist < $1.dist }?.date
+    }
+
+    /// "04月29日" → 年份取与发件时间最接近的那个:购票/改签邮件的乘车日期总在发件日附近
+    private static func resolveMonthDay(_ s: String, mailDate: Date?) -> Date? {
+        guard let r = try? NSRegularExpression(pattern: "(\\d{1,2})\\s*月\\s*(\\d{1,2})\\s*日") else { return nil }
+        guard let m = r.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)),
+              let mR = Range(m.range(at: 1), in: s),
+              let dR = Range(m.range(at: 2), in: s),
+              let month = Int(s[mR]), let day = Int(s[dR]) else { return nil }
+        let cal = Calendar.current
+        let anchor = mailDate ?? Date()
+        let year = cal.component(.year, from: anchor)
+        var best: Date?
+        for y in (year - 1)...(year + 1) {
+            var comps = DateComponents()
+            comps.year = y; comps.month = month; comps.day = day
+            guard let d = cal.date(from: comps) else { continue }
+            if best == nil || abs(d.timeIntervalSince(anchor)) < abs(best!.timeIntervalSince(anchor)) {
+                best = d
+            }
+        }
+        return best
     }
 
     /// 站名词扫描:内置站名表逐一查找;同一位置只保留最长匹配(上海虹桥 优先于 上海)
@@ -265,5 +309,67 @@ enum TicketMailParser {
             return (String(whole[cRange]) + "车", String(whole[sRange]))
         }
         return nil
+    }
+
+    // MARK: 自检(-ParserTest:老版 + 新版邮件样例,输出 PARSERTEST 行供无头验证)
+
+    static func runSelfTestIfNeeded() {
+        let args = ProcessInfo.processInfo.arguments
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("tn_parsertest.txt")
+        // 进门先落标记,区分「钩子没跑」和「解析中途挂掉」
+        try? "START \(args.joined(separator: " "))".write(to: url, atomically: true, encoding: .utf8)
+        guard args.contains("-ParserTest") else { return }
+        var out: [String] = []
+        // simctl --console 不可靠,结果同时落到沙盒 tmp 供无头读取
+        func emit(_ s: String) { print(s); out.append(s) }
+        let cal = Calendar.current
+        func date(_ y: Int, _ mo: Int, _ d: Int, _ h: Int = 0) -> Date {
+            cal.date(from: DateComponents(year: y, month: mo, day: d, hour: h))!
+        }
+        func check(_ name: String, _ ok: Bool) {
+            emit(ok ? "PARSERTEST PASS \(name)" : "PARSERTEST FAIL \(name)")
+        }
+
+        // 2013 年老版邮件:无年份日期、半角逗号、「一」当站名分隔符
+        let oldTickets = parse(subject: "网上购票系统-用户支付通知",
+                               bodyText: "1.张三,04月29日19:36,上海一郑州,T164次列车,10车091号,硬座,票价128.50元。",
+                               owner: "张三", mailDate: date(2013, 4, 11, 20))
+        let o = oldTickets.first
+        check("old.count", oldTickets.count == 1)
+        check("old.train", o?.trainNo == "T164")
+        check("old.route", o?.fromStation == "上海" && o?.toStation == "郑州")
+        check("old.date", o?.date == date(2013, 4, 29))
+        check("old.time", o?.departTimeText == "19:36")
+        check("old.coachSeat", o?.coach == "10车" && o?.seat == "091号")
+        check("old.class", o?.seatClass == "硬座")
+        check("old.price", o?.price == 128.5)
+        check("old.passenger", o?.passenger == "张三")
+        emit("PARSERTEST old " + oldTickets.map {
+            "\($0.trainNo ?? "?") \($0.fromStation ?? "?")→\($0.toStation ?? "?") " +
+            "\($0.date.map { Fmt.dotDate.string(from: $0) } ?? "?") \($0.departTimeText ?? "?") " +
+            "\($0.coach ?? "?")\($0.seat ?? "?") \($0.seatClass ?? "?") \($0.price.map { String($0) } ?? "?")"
+        }.joined(separator: " ; "))
+
+        // 现行格式回归:带年份日期 + 常规分隔符
+        let newTickets = parse(subject: "12306 购票成功通知",
+                               bodyText: "乘车人:1.张三,2026年09月30日 G4098 郑州东-上海虹桥 20:48开 07车02F号 二等座 ¥471.5",
+                               owner: "张三", mailDate: date(2026, 9, 20))
+        let n = newTickets.first
+        check("new.count", newTickets.count == 1)
+        check("new.train", n?.trainNo == "G4098")
+        check("new.route", n?.fromStation == "郑州东" && n?.toStation == "上海虹桥")
+        check("new.date", n?.date == date(2026, 9, 30))
+        check("new.time", n?.departTimeText == "20:48")
+        check("new.coachSeat", n?.coach == "07车" && n?.seat == "02F号")
+        check("new.class", n?.seatClass == "二等座")
+        check("new.price", n?.price == 471.5)
+        emit("PARSERTEST new " + newTickets.map {
+            "\($0.trainNo ?? "?") \($0.fromStation ?? "?")→\($0.toStation ?? "?") " +
+            "\($0.date.map { Fmt.dotDate.string(from: $0) } ?? "?") \($0.departTimeText ?? "?") " +
+            "\($0.coach ?? "?")\($0.seat ?? "?") \($0.seatClass ?? "?") \($0.price.map { String($0) } ?? "?")"
+        }.joined(separator: " ; "))
+
+        try? out.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+        print("PARSERTESTFILE \(url.path)")
     }
 }

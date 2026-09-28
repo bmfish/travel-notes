@@ -36,6 +36,7 @@ struct TravelNotesApp: App {
             .task { SnapshotSupport.runIfNeeded() }
             .task { await MailSyncEngine.runSelfTestIfNeeded() }
             .task { TripCalendar.runSelfTestIfNeeded() }
+            .task { TicketMailParser.runSelfTestIfNeeded() }
         }
     }
 }
