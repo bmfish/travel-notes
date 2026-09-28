@@ -37,6 +37,12 @@ final class TrainScheduleService {
 
     // MARK: - 对外接口
 
+    /// 站名 -> 电报码(ZAF 这类三字码)
+    func telecode(for station: String) async throws -> String? {
+        let codes = try await telecodeMap()
+        return lookup(station, in: codes)
+    }
+
     /// 查询车次全程经停时刻表;结果按「车次+日期」缓存,历史日期查不到时按当前运行图兜底
     func stops(trainNo: String, fromStation: String, toStation: String, date: Date) async throws -> [TrainStop] {
         let cacheKey = "\(trainNo)|\(Self.dateFormatter.string(from: date))"

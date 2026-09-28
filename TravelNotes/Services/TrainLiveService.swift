@@ -88,6 +88,56 @@ final class TrainLiveService {
         return x == y || x == y + "站" || x + "站" == y
     }
 
+    /// 查询车次在指定车站、指定日期的站台(车站大屏接口,提前几天就会排出来)
+    func platform(trainCode: String, date: Date, station: String) async throws -> String? {
+        let code = trainCode.trimmingCharacters(in: .whitespaces).uppercased()
+        guard let tele = try await TrainScheduleService.shared.telecode(for: station) else {
+            throw TrainLiveError.badResponse
+        }
+        let day = Self.dayFormatter.string(from: date)
+        let rows = try await boardRows(stationCode: tele, day: day)
+        let hit = rows.first {
+            ($0["station_train_code"] as? String) == code
+                && ($0["station_train_date"] as? String) == day
+        }
+        guard let raw = hit?["platform_no"] as? String else { return nil }
+        return Self.platformDisplay(raw)
+    }
+
+    /// "28A#28B#" -> "28A/28B";"22A#" -> "22A";"15A#15B#15B#" -> "15A/15B"
+    static func platformDisplay(_ raw: String) -> String? {
+        var seen: [String] = []
+        for part in raw.split(separator: "#") {
+            let p = String(part)
+            if !p.isEmpty && !seen.contains(p) { seen.append(p) }
+        }
+        return seen.isEmpty ? nil : seen.joined(separator: "/")
+    }
+
+    // MARK: - 车站大屏(按车站+日期缓存)
+
+    private var boardCache: [String: (rows: [[String: Any]], at: Date)] = [:]
+
+    private func boardRows(stationCode: String, day: String) async throws -> [[String: Any]] {
+        let key = "\(stationCode)|\(day)"
+        if let hit = queue.sync(execute: { boardCache[key] }),
+           Date().timeIntervalSince(hit.at) < cacheTTL {
+            return hit.rows
+        }
+        let url = URL(string: "https://mobile.12306.cn/wxxcx/wechat/bigScreen/queryTrainByStation"
+            + "?train_start_date=\(day)&train_station_code=\(stationCode)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = Data()
+        let (data, _) = try await session.data(for: request)
+        guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let rows = obj["data"] as? [[String: Any]] else {
+            throw TrainLiveError.badResponse
+        }
+        queue.sync { boardCache[key] = (rows, Date()) }
+        return rows
+    }
+
     // MARK: - 解析
 
     private static func parse(data: Data, trainCode: String, date: Date) throws -> TrainLiveInfo {

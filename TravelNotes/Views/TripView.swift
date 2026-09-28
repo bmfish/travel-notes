@@ -12,6 +12,8 @@ struct TripView: View {
     @State private var liveInfos: [UUID: TrainLiveInfo] = [:]
     /// 到达时刻(HH:mm),从经停时刻表取,按行程 id 索引
     @State private var arriveTimes: [UUID: String] = [:]
+    /// 站台(车站大屏提前几天就排出来),按行程 id 索引
+    @State private var platforms: [UUID: String] = [:]
 
     private var upcoming: [TicketEntry] {
         let start = Calendar.current.startOfDay(for: Date())
@@ -55,7 +57,8 @@ struct TripView: View {
                                             NavigationLink(value: entry.id) {
                                                 UpcomingTripCard(entry: entry,
                                                                  liveInfo: liveInfos[entry.id],
-                                                                 arriveTime: arriveTimes[entry.id])
+                                                                 arriveTime: arriveTimes[entry.id],
+                                                                 platform: platforms[entry.id])
                                             }
                                             .buttonStyle(.plain)
                                             .contextMenu {
@@ -131,7 +134,7 @@ struct TripView: View {
         }
     }
 
-    /// 行程卡补充信息:到达时刻(全部行程,来自经停时刻表);检票口/晚点(仅当天,12306 未到出行日不公布)
+    /// 行程卡补充信息:到达时刻(经停时刻表)、站台(车站大屏,提前几天就有)、检票口/晚点(出行日当天 12306 才公布检票口)
     private func loadInfo() async {
         for entry in upcoming {
             guard let code = entry.trainNo, !code.isEmpty else { continue }
@@ -143,8 +146,12 @@ struct TripView: View {
                stop.arriveTime != "----" {
                 arriveTimes[entry.id] = Self.hhmm(stop.arriveTime)
             }
-            if Calendar.current.isDateInToday(entry.date),
-               let info = try? await TrainLiveService.shared.live(trainCode: code, date: entry.date) {
+            if platforms[entry.id] == nil, let from = entry.fromStation,
+               let pf = try? await TrainLiveService.shared.platform(trainCode: code, date: entry.date,
+                                                                    station: from) {
+                platforms[entry.id] = pf
+            }
+            if let info = try? await TrainLiveService.shared.live(trainCode: code, date: entry.date) {
                 liveInfos[entry.id] = info
             }
         }
@@ -249,6 +256,8 @@ private struct UpcomingTripCard: View {
     let liveInfo: TrainLiveInfo?
     /// 到达时刻(HH:mm),来自经停时刻表
     let arriveTime: String?
+    /// 站台(车站大屏,提前几天就有)
+    let platform: String?
 
     private var color: Color { Theme.routeColor(from: entry.fromStation, to: entry.toStation) }
 
@@ -355,6 +364,11 @@ private struct UpcomingTripCard: View {
                 liveChip(icon: "door.left.hand.open",
                          text: "检票口 \(gateChipText)",
                          tint: gateText == nil ? Theme.ticketGray : Theme.railBlue)
+                if let platform {
+                    liveChip(icon: "square.stack.3d.up",
+                             text: "站台 \(platform)",
+                             tint: Theme.railBlueDeep)
+                }
                 if isToday {
                     if let liveInfo {
                         let delay = liveInfo.maxDelay
