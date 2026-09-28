@@ -90,8 +90,8 @@ final class TrainLiveService {
         return x == y || x == y + "站" || x + "站" == y
     }
 
-    /// 预计检票口:12306 出发当天才公布检票口,但同站台的车共用固定检票口。
-    /// 用「今天同站台邻车」的实测检票口提前推出具体值,出发当天调用方直接换正式值。
+    /// 预计检票口:12306 出发当天才公布检票口,但同一辆车基本固定站台固定口。
+    /// 优先用这趟车自己今天的实测值;今天没开行/站台变了,再借同站台邻车的实测值。
     func estimatedGate(trainCode: String, date: Date, station: String) async -> String? {
         let code = trainCode.trimmingCharacters(in: .whitespaces).uppercased()
         let day = Self.dayFormatter.string(from: date)
@@ -109,13 +109,27 @@ final class TrainLiveService {
 
     private func computeEstimatedGate(code: String, day: String, station: String) async throws -> String? {
         let today = Self.dayFormatter.string(from: Date())
+        // 这趟车自己今天的实测检票口(同一辆车天天基本同站台同口)
+        var ownTodayGate: String?
+        if day != today, let info = try? await live(trainCode: code, date: Date()),
+           let gate = info.stop(at: station)?.gateDisplay {
+            ownTodayGate = gate
+        }
         if let tele = try await TrainScheduleService.shared.telecode(for: station) {
-            // 按未来计划站台找今天用同一站台的邻车,借它实测的检票口
             let rowsFuture = try await boardRows(stationCode: tele, day: day)
             let myRaw = rowsFuture.first {
                 ($0["station_train_code"] as? String) == code && ($0["station_train_date"] as? String) == day
             }?["platform_no"] as? String
+            if let ownTodayGate {
+                let ownRawToday = try await boardRows(stationCode: tele, day: today).first {
+                    ($0["station_train_code"] as? String) == code
+                }?["platform_no"] as? String
+                if myRaw == nil || ownRawToday == nil || ownRawToday == myRaw {
+                    return ownTodayGate
+                }
+            }
             if let myRaw, !myRaw.isEmpty {
+                // 出行日站台与今天不同:按出行日计划站台,借今天同站台邻车的实测检票口
                 let mySides = Set(Self.sides(of: myRaw))
                 var best: (train: String, score: Int)?
                 for r in try await boardRows(stationCode: tele, day: today) {
@@ -131,12 +145,7 @@ final class TrainLiveService {
                 }
             }
         }
-        // 兜底:自己这趟车今天的实测检票口(日常车基本天天同站台同口)
-        if day != today, let info = try? await live(trainCode: code, date: Date()),
-           let gate = info.stop(at: station)?.gateDisplay {
-            return gate
-        }
-        return nil
+        return ownTodayGate
     }
 
     /// "22A#22B#" -> ["22A","22B"] 去重保序
