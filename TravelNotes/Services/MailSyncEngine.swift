@@ -511,10 +511,28 @@ final class MailSyncEngine: ObservableObject {
         return count
     }
 
-    /// 解析邮件 Date 头(用于跨文件夹的时序排序)
+    /// 解析邮件 Date 头(用于跨文件夹的时序排序和裸日期年份推断)。
+    /// QQ 的 Date 头千奇百怪:"Thu, 16 Sep 2021 14:30:27 +0800 (CST)"、
+    /// 无星期的 "23 Jan 2015 18:28:04 +0800"、"+08:00" 冒头偏移都要认。
     nonisolated static func extractMailDate(_ raw: Data, formatter: DateFormatter) -> Date? {
-        guard let line = extractHeader("date", raw: raw) else { return nil }
-        return formatter.date(from: line) ?? formatter.date(from: line.replacingOccurrences(of: "  ", with: " "))
+        guard var line = extractHeader("date", raw: raw) else { return nil }
+        line = MIME.decodeEncodedWords(line)
+        line = line.replacingOccurrences(of: "\\([^)]*\\)", with: " ", options: .regularExpression)
+        line = line.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        for format in ["EEE, dd MMM yyyy HH:mm:ss Z",
+                       "EEE, dd MMM yyyy HH:mm:ss ZZZZZ",
+                       "dd MMM yyyy HH:mm:ss Z",
+                       "dd MMM yyyy HH:mm:ss ZZZZZ",
+                       "EEE, dd MMM yyyy HH:mm:ss",
+                       "dd MMM yyyy HH:mm:ss",
+                       "yyyy-MM-dd HH:mm:ss Z",
+                       "yyyy-MM-dd"] {
+            formatter.dateFormat = format
+            if let date = formatter.date(from: line) { return date }
+        }
+        return nil
     }
 
     /// 从正文提取 12306 订单号码,用于关联改签前后的邮件
