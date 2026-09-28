@@ -26,6 +26,13 @@ enum TicketMailParser {
         return keywords.contains { s.contains($0) }
     }
 
+    /// 像"购票通知"才收:12306 的营销邮件也带车次站名,直接解析会拼出没去过的假行程
+    static func looksLikePurchase(subject: String, bodyText: String) -> Bool {
+        let s = subject + " " + bodyText
+        let markers = ["订单号", "车票信息", "乘车人", "换票", "取票", "席别", "座位"]
+        return markers.contains { s.contains($0) }
+    }
+
     // MARK: 解析
 
     static func parse(subject: String, bodyText: String, owner: String? = nil, mailDate: Date? = nil) -> [ParsedTicket] {
@@ -45,7 +52,10 @@ enum TicketMailParser {
         // 邮件里的编号乘车人列表("1.张三," "2.高小玉,"),用于只保留本人票
         let passengerItems = passengerItems(in: text)
 
-        let pairMatches = stationPairMatches(in: text)
+        // 严格分隔符(-—至到等)的站对优先;整篇都没有严格站对(老邮件全用「一」当破折号)才放开「一」,
+        // 否则推荐文案里的"武汉一汉口"会抢走真实区间
+        let strictPairs = stationPairMatches(in: text, allowHanOne: false)
+        let pairMatches = strictPairs.isEmpty ? stationPairMatches(in: text, allowHanOne: true) : strictPairs
         let stationHits = findStations(in: text)
         let timeMatches = allMatches(of: "([01]?\\d|2[0-3]):[0-5]\\d", in: text)
 
@@ -62,8 +72,11 @@ enum TicketMailParser {
                 if let segmentPassenger {
                     guard segmentPassenger == owner else { continue }
                 } else if passengerItems.isEmpty {
+                    // "尊敬张三先生:"只是称呼,不算乘车人署名(代买邮件开头也是"尊敬XX先生")
                     guard allMatches(of: NSRegularExpression.escapedPattern(for: owner), in: text)
-                        .contains(where: { Self.offsetDistance($0.range.lowerBound, p, text) < 200 }) else { continue }
+                        .contains(where: {
+                            Self.offsetDistance($0.range.lowerBound, p, text) < 200 && !$0.isSalutation(in: text)
+                        }) else { continue }
                     ticket.passenger = owner
                 } else {
                     continue
@@ -78,7 +91,9 @@ enum TicketMailParser {
                 ticket.fromStation = pair.from
                 ticket.toStation = pair.to
             } else {
+                // 只看车次 40 字内的站名,远处段落里的站名不能拿来当区间
                 let nearNames = stationHits
+                    .filter { Self.offsetDistance($0.range.lowerBound, p, text) <= 40 }
                     .sorted { Self.offsetDistance($0.range.lowerBound, p, text) < Self.offsetDistance($1.range.lowerBound, p, text) }
                     .map(\.text)
                 var uniqueNames: [String] = []
@@ -130,6 +145,12 @@ enum TicketMailParser {
     private struct Hit {
         let range: Range<String.Index>
         let text: String
+
+        /// 命中点是否落在"尊敬…先生/女士"这类称呼里
+        func isSalutation(in text: String) -> Bool {
+            let head = text.index(range.lowerBound, offsetBy: -3, limitedBy: text.startIndex) ?? text.startIndex
+            return text[head..<range.lowerBound].contains("尊敬")
+        }
     }
 
     private struct StationPair {
@@ -144,8 +165,8 @@ enum TicketMailParser {
     }
 
     /// "郑州东站-开封站"/"杭州东至上海虹桥" 形态的站名对,两侧必须能解析为已知车站
-    private static func stationPairMatches(in text: String) -> [StationPair] {
-        guard let regex = stationPairRegex else { return [] }
+    private static func stationPairMatches(in text: String, allowHanOne: Bool) -> [StationPair] {
+        guard let regex = allowHanOne ? loosePairRegex : strictPairRegex else { return [] }
         var pairs: [StationPair] = []
         let full = NSRange(text.startIndex..., in: text)
         regex.enumerateMatches(in: text, range: full) { match, _, _ in
@@ -167,14 +188,17 @@ enum TicketMailParser {
         return name
     }
 
-    private static var stationPairRegex: NSRegularExpression? = {
+    private static let strictPairRegex = makePairRegex(separators: "-—－–—至到~→＞>")
+    /// 「一」只给 2015 年前的老邮件当破折号用,单独一档,避免推荐文案拼出假区间
+    private static let loosePairRegex = makePairRegex(separators: "-—－–—至到~→＞>一")
+
+    private static func makePairRegex(separators: String) -> NSRegularExpression? {
         let names = StationDirectory.shared.stations.map(\.n).sorted { $0.count > $1.count }
         guard !names.isEmpty else { return nil }
         let alternation = names.map { NSRegularExpression.escapedPattern(for: $0) }.joined(separator: "|")
-        // 分隔符含汉字「一」:2015 年前的老邮件用"上海一郑州"当破折号
-        let pattern = "((?:\(alternation))站?)\\s*[-—－–—至到~→＞>一]{1,3}\\s*((?:\(alternation))站?)"
+        let pattern = "((?:\(alternation))站?)\\s*[\(separators)]{1,3}\\s*((?:\(alternation))站?)"
         return try? NSRegularExpression(pattern: pattern)
-    }()
+    }
 
     private static func allMatches(of pattern: String, in text: String) -> [Hit] {
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
@@ -378,6 +402,30 @@ enum TicketMailParser {
             "\($0.date.map { Fmt.dotDate.string(from: $0) } ?? "?") \($0.departTimeText ?? "?") " +
             "\($0.coach ?? "?")\($0.seat ?? "?") \($0.seatClass ?? "?") \($0.price.map { String($0) } ?? "?")"
         }.joined(separator: " ; "))
+
+        // 回归:广告/推荐里的"武汉一汉口"不能抢走真实区间
+        let phantomBody = """
+        尊敬张三先生:您所购车票信息如下:
+        1.张三，G4098次列车,武汉一汉口区间加开,郑州东-上海虹桥 20:48开,07车02F号,二等座,票价471.5元。
+        """
+        let ph = parse(subject: "购票通知", bodyText: phantomBody, owner: "张三", mailDate: date(2026, 9, 1))
+        check("phantom.count", ph.count == 1)
+        check("phantom.route", ph.first?.fromStation == "郑州东" && ph.first?.toStation == "上海虹桥")
+        emit("PARSERTEST phantom " + ph.map {
+            "\($0.trainNo ?? "?") \($0.fromStation ?? "?")→\($0.toStation ?? "?")"
+        }.joined(separator: " ; "))
+
+        // 回归:称呼里的姓名不算乘车人署名(代买邮件开头也是"尊敬XX先生")
+        let otherBody = """
+        尊敬张三先生:您为他人购买的车票信息如下:
+        1.高小玉，G4098次列车,武汉一汉口 20:48开,二等座,票价471.5元。
+        """
+        let other = parse(subject: "购票通知", bodyText: otherBody, owner: "张三", mailDate: date(2026, 9, 1))
+        check("other.filtered", other.isEmpty)
+
+        // 回归:营销邮件没有订单/车票要素,不该进同步
+        check("gate.old", looksLikePurchase(subject: "网上购票系统-用户支付通知", bodyText: realBody))
+        check("gate.promo", !looksLikePurchase(subject: "武汉—汉口特惠", bodyText: "C1234 武汉—汉口 8.5元起,快来抢购!"))
 
         // 现行格式回归:带年份日期 + 常规分隔符
         let newTickets = parse(subject: "12306 购票成功通知",

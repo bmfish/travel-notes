@@ -180,8 +180,11 @@ final class MailSyncEngine: ObservableObject {
                         // 退票/退单/改签邮件也要收集(分别用于退票集合与改签原票作废)
                         let isRefund = subject.contains("退票") || subject.contains("退单")
                         let isChange = subject.contains("改签")
-                        guard isRefund || isChange || TicketMailParser.looksLikeTicketMail(from: from, subject: subject) else { continue }
                         let bodyText = MIME.stripHTML(MIME.extractBody(raw: raw))
+                        // 12306 也发营销邮件(同样带车次站名),必须像"购票通知"才收,否则拼出没去过的假行程
+                        guard isRefund || isChange ||
+                                (TicketMailParser.looksLikeTicketMail(from: from, subject: subject)
+                                 && TicketMailParser.looksLikePurchase(subject: subject, bodyText: bodyText)) else { continue }
                         let uid = Self.extractUID(record.text) ?? "uid-\(doneCount)-\(mails.count)"
                         let mailDate = Self.extractMailDate(raw, formatter: mailDateFormatter)
                         mails.append(FetchedMail(uid: uid, folder: folder, mailDate: mailDate,

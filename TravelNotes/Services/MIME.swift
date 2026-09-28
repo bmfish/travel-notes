@@ -64,15 +64,17 @@ enum MIME {
     /// 按字符集解码;中文邮件常见 gb2312/gbk 走 GB18030
     static func decode(_ data: Data, charset: String) -> String {
         let lower = charset.lowercased()
+        let gbEncoding = String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(
+            CFStringEncoding(CFStringEncodings.GB_18030_2000.rawValue)))
         if lower.contains("gb") || lower.contains("936") {
-            let nsEncoding = CFStringConvertEncodingToNSStringEncoding(
-                CFStringEncoding(CFStringEncodings.GB_18030_2000.rawValue))
-            if let s = String(data: data, encoding: String.Encoding(rawValue: nsEncoding)) {
+            if let s = String(data: data, encoding: gbEncoding) {
                 return s
             }
         }
-        return String(data: data, encoding: .utf8)
-            ?? String(data: data, encoding: .isoLatin1)
+        if let s = String(data: data, encoding: .utf8) { return s }
+        // 老邮件常见裸 GB2312 字节流却没声明 charset,UTF-8 解不开时按 GB18030 兜底
+        if let s = String(data: data, encoding: gbEncoding) { return s }
+        return String(data: data, encoding: .isoLatin1)
             ?? String(decoding: data, as: UTF8.self)
     }
 
