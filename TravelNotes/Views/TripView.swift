@@ -269,7 +269,9 @@ private struct UpcomingTripCard: View {
 
     private var gateChipText: String {
         if let gateText { return gateText }
-        return isToday && liveInfo == nil ? "查询中…" : "待公布"
+        // 12306 出发当天才公布检票口(站台提前几天就有),未到出发日说明白,别显示成像 bug
+        if isToday { return liveInfo == nil ? "查询中…" : "待公布" }
+        return "出发当天公布"
     }
 
     private var countdownText: String {

@@ -23,6 +23,10 @@ struct DetailView: View {
                     .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
                     .padding(.top, 8)
 
+                if entry.date >= Calendar.current.startOfDay(for: Date()) {
+                    LiveInfoCard(entry: entry)
+                }
+
                 if let note = entry.note, !note.isEmpty {
                     noteCard(note)
                 }
@@ -364,6 +368,76 @@ private struct StopsTimelineCard: View {
         } catch {
             loading = false
             failed = true
+        }
+    }
+}
+
+// MARK: - 检票口/站台/晚点
+
+/// 与「行程」页同款实时信息:检票口(出行日当天 12306 才公布)、站台(车站大屏提前几天就有)、晚点
+private struct LiveInfoCard: View {
+    let entry: TicketEntry
+
+    @State private var liveInfo: TrainLiveInfo?
+    @State private var platform: String?
+
+    private var isToday: Bool { Calendar.current.isDateInToday(entry.date) }
+
+    private var gateText: String? {
+        liveInfo?.stop(at: entry.fromStation)?.gateDisplay
+    }
+
+    private var gateChipText: String {
+        if let gateText { return gateText }
+        // 12306 出发当天才公布检票口(站台提前几天就有),未到出发日说明白,别显示成像 bug
+        if isToday { return liveInfo == nil ? "查询中…" : "待公布" }
+        return "出发当天公布"
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            chip(icon: "door.left.hand.open",
+                 text: "检票口 \(gateChipText)",
+                 tint: gateText == nil ? Theme.ticketGray : Theme.railBlue)
+            if let platform {
+                chip(icon: "square.stack.3d.up",
+                     text: "站台 \(platform)",
+                     tint: Theme.railBlueDeep)
+            }
+            if isToday, let liveInfo {
+                let delay = liveInfo.maxDelay
+                chip(icon: delay > 0 ? "clock.badge.exclamationmark" : "checkmark.circle",
+                     text: delay > 0 ? "晚点 \(delay) 分" : "正点",
+                     tint: delay > 0 ? Theme.railRed : Theme.routeGreen)
+            }
+            Spacer()
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.8)))
+        .task { await load() }
+    }
+
+    private func chip(icon: String, text: String, tint: Color) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .semibold))
+            Text(text)
+                .font(.system(size: 12, weight: .semibold))
+        }
+        .foregroundColor(tint)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(Capsule().fill(tint.opacity(0.12)))
+    }
+
+    private func load() async {
+        guard let code = entry.trainNo, !code.isEmpty else { return }
+        if let pf = try? await TrainLiveService.shared.platform(trainCode: code, date: entry.date,
+                                                                station: entry.fromStation ?? "") {
+            platform = pf
+        }
+        if let info = try? await TrainLiveService.shared.live(trainCode: code, date: entry.date) {
+            liveInfo = info
         }
     }
 }
