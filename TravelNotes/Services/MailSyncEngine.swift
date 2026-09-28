@@ -40,12 +40,12 @@ final class MailSyncEngine: ObservableObject {
         statusText = "未同步"
     }
 
-    /// 打开 App 时自动同步:已配置且距上次同步超过 30 分钟
+    /// 打开 App 时自动同步:已配置且距上次同步超过 1 天
     func autoSyncIfNeeded(context: ModelContext) {
         let debug = ProcessInfo.processInfo.arguments.contains("-MailUser")
         if debug { Self.trace("autoSync: hasCred=\(hasCredentials) running=\(running) last=\(lastSyncDate.map { "\($0)" } ?? "nil")") }
         guard hasCredentials, !running else { return }
-        if let last = lastSyncDate, Date().timeIntervalSince(last) < 30 * 60 { return }
+        if let last = lastSyncDate, Date().timeIntervalSince(last) < 24 * 60 * 60 { return }
         if debug { Self.trace("autoSync: starting sync") }
         Task { await sync(context: context) }
     }
