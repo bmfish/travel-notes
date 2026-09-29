@@ -43,6 +43,13 @@ struct AddEditView: View {
                 noteSection
                 photoSection
             }
+            .scrollContentBackground(.hidden)
+            .background(Theme.paperBackground.ignoresSafeArea())
+            .listRowBackground(Theme.creamPaper)
+            .listRowSeparatorTint(Theme.ticketGray.opacity(0.25))
+            .tint(Theme.railBlue)
+            // 日期/时间选择器走中文
+            .environment(\.locale, .init(identifier: "zh_CN"))
             .navigationTitle(entry == nil ? (candidate == nil ? "记一笔" : "确认票根") : "编辑行程")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
