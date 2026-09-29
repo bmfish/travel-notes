@@ -5,31 +5,35 @@ import SwiftData
 struct TravelNotesApp: App {
     @State private var tabSelection: Int = {
         let args = ProcessInfo.processInfo.arguments
-        if args.contains("-StatsTab") { return 4 }
-        if args.contains("-SyncTab") { return 3 }
-        if args.contains("-FootprintTab") { return 2 }
-        if args.contains("-TripTab") { return 1 }
+        if args.contains("-SyncTab") { return 5 }
+        if args.contains("-FootprintTab") { return 4 }
+        if args.contains("-StatsTab") { return 3 }
+        if args.contains("-TripTab") { return 2 }
+        if args.contains("-BoardTab") { return 0 }
         return 0
     }()
 
     var body: some Scene {
         WindowGroup {
             TabView(selection: $tabSelection) {
-                HomeView()
+                BoardView()
                     .tag(0)
+                    .tabItem { Label("大屏", systemImage: "list.bullet.rectangle.portrait.fill") }
+                HomeView()
+                    .tag(1)
                     .tabItem { Label("票根", systemImage: "ticket") }
                 TripView()
-                    .tag(1)
-                    .tabItem { Label("行程", systemImage: "flag.checkered") }
-                FootprintView()
                     .tag(2)
+                    .tabItem { Label("行程", systemImage: "flag.checkered") }
+                StatsView()
+                    .tag(3)
+                    .tabItem { Label("统计", systemImage: "chart.bar.fill") }
+                FootprintView()
+                    .tag(4)
                     .tabItem { Label("足迹", systemImage: "map") }
                 SyncView()
-                    .tag(3)
+                    .tag(5)
                     .tabItem { Label("同步", systemImage: "envelope.arrow.triangle.branch") }
-                StatsView()
-                    .tag(4)
-                    .tabItem { Label("统计", systemImage: "chart.bar.fill") }
             }
             .modifier(AutoSyncOnActive())
             .modelContainer(for: [TicketEntry.self, MailCandidate.self])

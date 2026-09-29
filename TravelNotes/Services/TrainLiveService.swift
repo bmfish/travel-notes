@@ -11,6 +11,19 @@ struct TrainLiveStop: Hashable {
     let waitingRoom: String
     /// 当前晚点分钟数(0 = 正点)
     let delayMinutes: Int
+    /// 检票状态码:实测 1=候车 2=正在检票 3=已发车;0/未知 = 接口没给(无独立「停止检票」码)。
+    /// 列车在途时已过站/未到站还会出现 10、空串、4(终到)等噪音值,一律按未知不显示
+    var ticketStatus: Int = 0
+
+    /// 检票状态文案,未知状态返回 nil 不显示
+    var checkStateText: String? {
+        switch ticketStatus {
+        case 1: return "候车"
+        case 2: return "正在检票"
+        case 3: return "已发车"
+        default: return nil
+        }
+    }
 
     /// 清理后的检票口语句:"6A、7A进站检票口" -> "6A、7A";未公布返回 nil
     var gateDisplay: String? {
@@ -41,6 +54,28 @@ struct TrainLiveInfo: Hashable {
 
 enum TrainLiveError: Error {
     case badResponse
+}
+
+/// 车站大屏一行:该站当天的一趟车(12306 小程序「车站大屏」接口,免登录)
+struct BigScreenTrain: Identifiable, Hashable {
+    /// 车次,如 C2551
+    let trainCode: String
+    /// 本站日期 yyyyMMdd
+    let stationDate: String
+    /// 计划开车时刻 "06:00";终到车此值被复用作到达时刻
+    let scheduledDepart: String
+    /// 实际/预计开点 "06:00",未发布为 nil
+    let actualDepart: String?
+    /// 计划到达时刻,始发车为 "----"
+    let scheduledArrive: String
+    let origin: String
+    let destination: String
+    /// 清洗后的站台,如 "19A/19B"
+    let platform: String?
+    /// 终到本站的车(接口里 end == 本站)
+    let terminating: Bool
+
+    var id: String { "\(trainCode)|\(stationDate)|\(scheduledDepart)" }
 }
 
 /// 12306 小程序「车次运行信息」接口封装(免登录):当日车次的检票口、晚点等实时数据
@@ -105,7 +140,8 @@ final class TrainLiveService {
             if s.gateDisplay == nil, let hit = pinned["\(code)|\(day)|\(s.stationName)"], Date() < hit.until {
                 patched = true
                 return TrainLiveStop(stationName: s.stationName, wicket: hit.value,
-                                     exit: s.exit, waitingRoom: s.waitingRoom, delayMinutes: s.delayMinutes)
+                                     exit: s.exit, waitingRoom: s.waitingRoom, delayMinutes: s.delayMinutes,
+                                     ticketStatus: s.ticketStatus)
             }
             return s
         }
@@ -219,13 +255,43 @@ final class TrainLiveService {
         return seen.isEmpty ? nil : seen.joined(separator: "/")
     }
 
+    /// 拉取车站当天完整大屏(免登录小程序接口),大屏页签用
+    func bigScreen(station: String, day: Date, forceRefresh: Bool = false) async throws -> [BigScreenTrain] {
+        guard let tele = try await TrainScheduleService.shared.telecode(for: station) else {
+            throw TrainLiveError.badResponse
+        }
+        let dayStr = Self.dayFormatter.string(from: day)
+        let rows = try await boardRows(stationCode: tele, day: dayStr, force: forceRefresh)
+        return rows.map { row in
+            // 实际/预计开点:接口给 "0600" 这类四位 HHmm 或 "----",归一成 "06:00"
+            let raw = (row["update_start_time"] as? String ?? "").trimmingCharacters(in: .whitespaces)
+            let actual: String?
+            if raw.count == 4, let h = Int(raw.prefix(2)), let m = Int(raw.suffix(2)), (0...23).contains(h), (0...59).contains(m) {
+                actual = raw.prefix(2) + ":" + raw.suffix(2)
+            } else {
+                actual = nil
+            }
+            return BigScreenTrain(
+                trainCode: row["station_train_code"] as? String ?? "",
+                stationDate: row["station_train_date"] as? String ?? dayStr,
+                scheduledDepart: row["start_time"] as? String ?? "----",
+                actualDepart: actual,
+                scheduledArrive: row["arrive_time"] as? String ?? "----",
+                origin: row["start_station_name"] as? String ?? "",
+                destination: row["end_station_name"] as? String ?? "",
+                platform: Self.platformDisplay(row["platform_no"] as? String ?? ""),
+                terminating: (row["end_station_telecode"] as? String ?? "") == tele
+            )
+        }
+    }
+
     // MARK: - 车站大屏(按车站+日期缓存)
 
     private var boardCache: [String: (rows: [[String: Any]], at: Date)] = [:]
 
-    private func boardRows(stationCode: String, day: String) async throws -> [[String: Any]] {
+    private func boardRows(stationCode: String, day: String, force: Bool = false) async throws -> [[String: Any]] {
         let key = "\(stationCode)|\(day)"
-        if let hit = queue.sync(execute: { boardCache[key] }),
+        if !force, let hit = queue.sync(execute: { boardCache[key] }),
            Date().timeIntervalSince(hit.at) < cacheTTL {
             return hit.rows
         }
@@ -257,7 +323,8 @@ final class TrainLiveService {
                           wicket: row["wicket"] as? String ?? "",
                           exit: row["exit"] as? String ?? "",
                           waitingRoom: row["waitingRoom"] as? String ?? "",
-                          delayMinutes: int(row["ticketDelay"]))
+                          delayMinutes: int(row["ticketDelay"]),
+                          ticketStatus: int(row["ticketStatus"]))
         }
         return TrainLiveInfo(trainCode: trainCode, date: date, stops: stops)
     }

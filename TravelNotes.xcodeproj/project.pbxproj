@@ -21,6 +21,7 @@
 		569F6BC5307882EB90D8BB9F /* TicketMailParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66398E8910569CBED70CAC5F /* TicketMailParser.swift */; };
 		7899253486276AD5A7592E38 /* MailSyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D9512507E2C98267B14CC95 /* MailSyncEngine.swift */; };
 		87109F78D23D4CED4377F172 /* PhotoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97E348A1F1ADE04F9321F5E1 /* PhotoStore.swift */; };
+		8F6B2E360625A4350B8BD613 /* BoardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00B13E826AF4D6816B857449 /* BoardView.swift */; };
 		92D44B7F5FD696EADD436A6A /* MIME.swift in Sources */ = {isa = PBXBuildFile; fileRef = 393A14FB558B619CBC4923A7 /* MIME.swift */; };
 		964E880D95F0EE12F8A96D47 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A57352F1DDBDE9EB0A68080F /* HomeView.swift */; };
 		9949E0FDEB1455537622BF2B /* TrainScheduleService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAC058B68A931597D863DFFC /* TrainScheduleService.swift */; };
@@ -36,6 +37,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		00B13E826AF4D6816B857449 /* BoardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardView.swift; sourceTree = "<group>"; };
 		0DCDE0E15B46A72822988C47 /* Keychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Keychain.swift; sourceTree = "<group>"; };
 		16D62E0F217919BEC9C2F072 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		23E50F600D69B7B3DD401836 /* IMAPClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IMAPClient.swift; sourceTree = "<group>"; };
@@ -71,6 +73,7 @@
 			isa = PBXGroup;
 			children = (
 				FD09BFD75C0F17F8E1917E88 /* AddEditView.swift */,
+				00B13E826AF4D6816B857449 /* BoardView.swift */,
 				59E50BAFCB9D6040786D8AA5 /* DetailView.swift */,
 				B2F8520E6195BB7CF8FD0860 /* FootprintView.swift */,
 				A57352F1DDBDE9EB0A68080F /* HomeView.swift */,
@@ -230,6 +233,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				14BFB2F70C742AA1CF15A49A /* AddEditView.swift in Sources */,
+				8F6B2E360625A4350B8BD613 /* BoardView.swift in Sources */,
 				06DF3C82AC8BFA2B2FABCC9A /* DetailView.swift in Sources */,
 				ECDD9609F85D9D40DCAD7CD2 /* FootprintView.swift in Sources */,
 				964E880D95F0EE12F8A96D47 /* HomeView.swift in Sources */,

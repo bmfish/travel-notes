@@ -364,3 +364,46 @@ struct MiniTicketCard: View {
         return s
     }
 }
+
+// MARK: - 检票状态徽章(行程卡/详情页共用)
+
+/// 呼吸绿点:正在检票时闪烁
+struct PulseDot: View {
+    @State private var on = false
+
+    var body: some View {
+        Circle()
+            .fill(Theme.routeGreen)
+            .frame(width: 6, height: 6)
+            .scaleEffect(on ? 1.45 : 0.8)
+            .opacity(on ? 0.55 : 1)
+            .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: on)
+            .onAppear { on = true }
+    }
+}
+
+/// 检票状态胶囊:候车 / 正在检票(绿底呼吸点)/ 已发车
+struct CheckStatusChip: View {
+    let text: String
+    /// 行程卡用小号,详情页用常规号
+    var small = false
+
+    private var boarding: Bool { text == "正在检票" }
+    private var departed: Bool { text == "已发车" }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if boarding { PulseDot() }
+            Text(text)
+                .font(.system(size: small ? 11 : 12,
+                              weight: small ? .heavy : .semibold,
+                              design: small ? .rounded : .default))
+        }
+        .foregroundColor(departed ? Theme.ticketGray.opacity(0.8)
+                                  : boarding ? Theme.routeGreen : Theme.ticketGray)
+        .padding(.horizontal, small ? 8 : 9)
+        .padding(.vertical, small ? 4 : 5)
+        .background(Capsule().fill(boarding ? Theme.routeGreen.opacity(0.14)
+                                            : Theme.ticketGray.opacity(0.10)))
+    }
+}
