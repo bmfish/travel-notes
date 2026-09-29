@@ -31,6 +31,9 @@ xcodebuild -project TravelNotes.xcodeproj -scheme TravelNotes \
 | `-BoardTab` / `-TripTab` / `-StatsTab` / `-FootprintTab` / `-SyncTab` | 启动直达对应 Tab(顺序:大屏/票根/行程/统计,足迹和同步在 More 里) |
 | `-MailUser x -MailPass y [-MailOwner 名字]` | 预置邮箱账号并触发同步;开启 trace 到沙盒临时目录 `tn_trace.log` |
 | `-MailSyncTest [-MailHost/-MailPort/-MailSince...]` | 同步链路自检,结果写 `tn_sync.txt`(`/tmp` 与沙盒临时目录都落一份)后退出(可指向 `scripts/mock_imap.py` 本地 mock,host 传 `127.0.0.1`) |
+| `-HomeTab` | 启动直达票根页(其余 Tab 参数见上) |
+| `-AddSheet` | 配合 `-HomeTab` 使用:启动即弹新增票根页,方便无头截图 |
+| `-BoardRoute 车次号` | 配合 `-BoardTab`:加载完自动推入该车经停时刻表详情,方便无头截图 |
 | `-Snapshots` / `-MapSnapshot` | 把票面/足迹地图渲染成 PNG 存盘,用于视觉核对 |
 
 ## 架构

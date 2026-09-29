@@ -23,6 +23,8 @@ struct BoardView: View {
     @FocusState private var searchFocused: Bool
     /// 已发车筛选:开着就完全不显示开走的车
     @State private var hideDeparted = UserDefaults.standard.object(forKey: "board.hideDeparted") as? Bool ?? true
+    /// 点进去看经停时刻表的车
+    @State private var routeTrain: BigScreenTrain?
 
     @State private var trains: [BigScreenTrain] = []
     /// 车次在大屏行 id -> 该站在本站的实时状态(检票口/检票状态/晚点),仅今天的临近车次
@@ -63,7 +65,10 @@ struct BoardView: View {
                             ForEach(grouped, id: \.hour) { group in
                                 VStack(spacing: 8) {
                                     hourHeader(group.hour)
-                                    ForEach(group.trains) { stub($0) }
+                                    ForEach(group.trains) { train in
+                                        Button { routeTrain = train } label: { stub(train) }
+                                            .buttonStyle(.plain)
+                                    }
                                 }
                             }
                         }
@@ -77,11 +82,20 @@ struct BoardView: View {
             .refreshable { await load(force: true) }
             // 顶部大屏卡本身就是页头,隐藏导航栏避免重复标题
             .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(item: $routeTrain) { train in
+                TrainRouteView(train: train, station: selectedStation, day: boardDay)
+            }
             .task(id: "\(selectedStation)|\(dayOffset)") {
                 if selectedStation.isEmpty, let first = frequentStations.first {
                     pick(first)
                 }
                 await load()
+                // 调试钩子:-BoardRoute 车次号,加载完自动推入该车时刻表,方便无头截图
+                let args = ProcessInfo.processInfo.arguments
+                if let i = args.firstIndex(of: "-BoardRoute"), i + 1 < args.count,
+                   let train = trains.first(where: { $0.trainCode == args[i + 1].uppercased() }) {
+                    routeTrain = train
+                }
             }
             .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
                 guard loaded, !loading else { return }
@@ -426,6 +440,8 @@ struct BoardView: View {
             } else {
                 ForEach(Array(rows.enumerated()), id: \.element.id) { index, train in
                     ledRow(train, searching: searching)
+                        .contentShape(Rectangle())
+                        .onTapGesture { routeTrain = train }
                     if index < rows.count - 1 {
                         Rectangle().fill(Color.white.opacity(0.07))
                             .frame(height: 0.5)
@@ -702,6 +718,8 @@ struct BoardView: View {
         let stop = liveByID[t.id]
         let gone = Self.isGone(t, day: boardDay)
         let delayed = stop?.delayMinutes ?? 0
+        // 彩色边条:与票根列表同一套 routeColor,同车次颜色固定
+        let accent = Theme.routeColor(from: t.trainCode, to: t.destination)
         return HStack(spacing: 0) {
             // 左截:时刻 + 站台
             VStack(alignment: .leading, spacing: 3) {
@@ -768,6 +786,10 @@ struct BoardView: View {
         }
         .background(RoundedRectangle(cornerRadius: 14).fill(Theme.creamPaper))
         .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14).fill(accent).frame(width: 4),
+            alignment: .leading
+        )
         .shadow(color: .black.opacity(0.07), radius: 5, y: 3)
         .opacity(gone ? 0.35 : 1)
     }
@@ -829,5 +851,164 @@ private extension BigScreenTrain {
     /// 展示用开点:优先实际/预计,没有用计划;未知返回占位
     var effectiveDepart: String {
         actualDepart ?? (scheduledDepart.isEmpty || scheduledDepart == "----" ? "--:--" : scheduledDepart)
+    }
+}
+
+// MARK: - 车次时刻表详情(大屏点进来)
+
+/// 大屏行的车次详情:经停时刻表(12306 时刻表接口),标出大屏所在车站
+private struct TrainRouteView: View {
+    let train: BigScreenTrain
+    /// 大屏当前所选车站(出发方向 = 乘车站,终到方向 = 到站)
+    let station: String
+    let day: Date
+
+    @State private var stops: [TrainStop] = []
+    @State private var failed = false
+
+    /// 两个方向统一映射成「始发 → 终到」的 OD 去查时刻表
+    private var fromStation: String { train.terminating ? train.origin : station }
+    private var toStation: String { train.terminating ? station : train.destination }
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 12) {
+                header
+                if failed {
+                    Label("没查到这趟车的时刻表,下拉重试", systemImage: "wifi.exclamationmark")
+                        .font(.system(size: 13))
+                        .foregroundColor(Theme.ticketGray)
+                        .padding(.top, 40)
+                } else if stops.isEmpty {
+                    ProgressView().padding(.top, 60)
+                } else {
+                    timetable
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 6)
+            .padding(.bottom, 30)
+        }
+        .background(Theme.paperBackground.ignoresSafeArea())
+        .navigationTitle(train.trainCode)
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await load() }
+        .refreshable { await load() }
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(train.trainCode)
+                    .font(.system(size: 26, weight: .heavy, design: .rounded))
+                    .foregroundColor(.white)
+                Spacer()
+                if let platform = train.platform {
+                    Text("站台 \(platform)")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 9).padding(.vertical, 4)
+                        .background(Capsule().fill(Color.white.opacity(0.18)))
+                }
+            }
+            Text("\(fromStation) → \(toStation)")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundColor(.white)
+            Text(Fmt.dotDate.string(from: day))
+                .font(.system(size: 12))
+                .foregroundColor(.white.opacity(0.85))
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 18)
+                .fill(LinearGradient(colors: [Theme.railBlueDeep, Theme.railBlue,
+                                              Color(red: 0.16, green: 0.42, blue: 0.72)],
+                                     startPoint: .topLeading, endPoint: .bottomTrailing))
+                .shadow(color: Theme.railBlue.opacity(0.35), radius: 12, y: 6)
+        )
+    }
+
+    private var timetable: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                Text("车站").frame(maxWidth: .infinity, alignment: .leading)
+                Text("到达").frame(width: 62, alignment: .trailing)
+                Text("开车").frame(width: 62, alignment: .trailing)
+                Text("停留").frame(width: 62, alignment: .trailing)
+            }
+            .font(.system(size: 10, weight: .bold))
+            .foregroundColor(Theme.ticketGray)
+            .padding(.horizontal, 14).padding(.vertical, 8)
+
+            ForEach(Array(stops.enumerated()), id: \.element.id) { index, stop in
+                if index > 0 {
+                    Rectangle().fill(Theme.ticketGray.opacity(0.18)).frame(height: 0.5)
+                        .padding(.horizontal, 14)
+                }
+                stopRow(stop, index: index)
+            }
+        }
+        .background(RoundedRectangle(cornerRadius: 14).fill(Theme.creamPaper))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .shadow(color: .black.opacity(0.07), radius: 5, y: 3)
+    }
+
+    private func stopRow(_ stop: TrainStop, index: Int) -> some View {
+        let isBoardStation = TrainLiveService.looseMatch(stop.stationName, station)
+        return HStack(spacing: 0) {
+            HStack(spacing: 6) {
+                Text("\(index + 1)")
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                    .frame(width: 16, height: 16)
+                    .background(Circle().fill(isBoardStation ? Theme.railBlue : Theme.ticketGray.opacity(0.5)))
+                Text(stop.stationName)
+                    .font(.system(size: 14, weight: isBoardStation ? .heavy : .medium))
+                    .foregroundColor(isBoardStation ? Theme.railBlue : Theme.ticketInk)
+                    .lineLimit(1).minimumScaleFactor(0.8)
+                if isBoardStation {
+                    Text("本站")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 4).padding(.vertical, 2)
+                        .background(Capsule().fill(Theme.railBlue))
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            stopTimeText(stop.arriveTime)
+                .frame(width: 62, alignment: .trailing)
+            stopTimeText(stop.departTime)
+                .frame(width: 62, alignment: .trailing)
+            Text(stop.stopoverText)
+                .font(.system(size: 12))
+                .foregroundColor(Theme.ticketGray)
+                .lineLimit(1).minimumScaleFactor(0.7)
+                .frame(width: 62, alignment: .trailing)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .background(isBoardStation ? Theme.railBlue.opacity(0.07) : .clear)
+    }
+
+    private func stopTimeText(_ raw: String) -> some View {
+        let empty = raw.isEmpty || raw == "----"
+        return Text(empty ? "——" : raw)
+            .font(.system(size: 14, weight: .semibold, design: .rounded))
+            .monospacedDigit()
+            .foregroundColor(empty ? Theme.ticketGray.opacity(0.5) : Theme.ticketInk)
+    }
+
+    private func load() async {
+        failed = false
+        do {
+            stops = try await TrainScheduleService.shared.stops(
+                trainNo: train.trainCode,
+                fromStation: fromStation,
+                toStation: toStation,
+                date: day)
+            failed = stops.isEmpty
+        } catch {
+            failed = true
+        }
     }
 }
