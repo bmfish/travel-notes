@@ -163,7 +163,7 @@ struct TripView: View {
             if liveInfos[entry.id]?.stop(at: entry.fromStation)?.gateDisplay == nil,
                gateEstimates[entry.id] == nil,
                let from = entry.fromStation,
-               let est = try? await TrainLiveService.shared.estimatedGate(trainCode: code, date: entry.date, station: from) {
+               let est = await TrainLiveService.shared.estimatedGate(trainCode: code, date: entry.date, station: from) {
                 gateEstimates[entry.id] = est
             }
         }

@@ -212,7 +212,7 @@ struct SyncView: View {
                 if let seatClass = candidate.seatClass, !seatClass.isEmpty {
                     Text(seatClass).font(.system(size: 11)).foregroundColor(.secondary)
                 }
-                if let price = candidate.price {
+                if candidate.price != nil {
                     Text(candidate.priceText ?? "")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(Theme.railRed)
