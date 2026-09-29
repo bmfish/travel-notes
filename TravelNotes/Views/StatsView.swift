@@ -280,6 +280,10 @@ struct StatsView: View {
 
     private var recordsList: some View {
         VStack(alignment: .leading, spacing: 10) {
+            if let recent = entries.first {
+                recordRow("tram.fill", "最近乘车", Fmt.dotDate.string(from: recent.date),
+                          "\(recent.trainNo ?? "") \(routeText(recent))", Theme.routeGreen)
+            }
             if let earliest = entries.last {
                 recordRow("clock", "最早一张", Fmt.dotDate.string(from: earliest.date),
                           routeText(earliest), Theme.railBlue)
@@ -287,11 +291,11 @@ struct StatsView: View {
             let timed = entries.filter { $0.departTime != nil }
             if let first = timed.min(by: { dayMinutes($0) < dayMinutes($1) }) {
                 recordRow("sunrise.fill", "最早乘车", Fmt.clock.string(from: first.departTime!),
-                          "\(first.trainNo ?? "") \(routeText(first))", Theme.routeGreen)
+                          "\(Fmt.dotDate.string(from: first.date)) · \(first.trainNo ?? "") \(routeText(first))", Theme.routeGreen)
             }
             if let last = timed.max(by: { dayMinutes($0) < dayMinutes($1) }) {
                 recordRow("sunset.fill", "最晚乘车", Fmt.clock.string(from: last.departTime!),
-                          "\(last.trainNo ?? "") \(routeText(last))", Theme.railBlueDeep)
+                          "\(Fmt.dotDate.string(from: last.date)) · \(last.trainNo ?? "") \(routeText(last))", Theme.railBlueDeep)
             }
             if let maxPrice = entries.max(by: { ($0.price ?? 0) < ($1.price ?? 0) }),
                let price = maxPrice.price, price > 0 {
@@ -299,7 +303,7 @@ struct StatsView: View {
                     ? String(format: "¥%.0f", price)
                     : String(format: "¥%.1f", price)
                 recordRow("yensign.circle.fill", "最贵一张", text,
-                          "\(maxPrice.trainNo ?? "") \(routeText(maxPrice))", Theme.railRed)
+                          "\(Fmt.dotDate.string(from: maxPrice.date)) · \(maxPrice.trainNo ?? "") \(routeText(maxPrice))", Theme.railRed)
             }
             if let longest = entries
                 .filter({ entry -> Bool in
@@ -308,7 +312,7 @@ struct StatsView: View {
                 })
                 .max(by: { tripKm($0) < tripKm($1) }) {
                 recordRow("arrow.left.and.right.circle.fill", "单程最远", "\(Int(tripKm(longest))) km",
-                          "\(longest.trainNo ?? "") \(routeText(longest))", Theme.routeGreen)
+                          "\(Fmt.dotDate.string(from: longest.date)) · \(longest.trainNo ?? "") \(routeText(longest))", Theme.routeGreen)
             }
         }
     }
