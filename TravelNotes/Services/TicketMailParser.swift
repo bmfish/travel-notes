@@ -46,7 +46,7 @@ enum TicketMailParser {
         guard !text.isEmpty else { return [] }
 
         // 车次号:前后不能是字母数字,避免命中订单号(如 EC58571374 里的 C5857)
-        let trainMatches = allMatches(of: "(?<![A-Za-z0-9])[GDCTKLY]\\d{1,4}(?!\\d)", in: text)
+        let trainMatches = allMatches(of: "(?<![A-Za-z0-9])[GDCTKZLYS]\\d{1,4}(?!\\d)", in: text)
         guard !trainMatches.isEmpty else { return [] }
 
         // 邮件里的编号乘车人列表("1.张三," "2.高小玉,"),用于只保留本人票
@@ -55,7 +55,11 @@ enum TicketMailParser {
         // 严格分隔符(-—至到等)的站对优先;整篇都没有严格站对(老邮件全用「一」当破折号)才放开「一」,
         // 否则推荐文案里的"武汉一汉口"会抢走真实区间
         let strictPairs = stationPairMatches(in: text, allowHanOne: false)
-        let pairMatches = strictPairs.isEmpty ? stationPairMatches(in: text, allowHanOne: true) : strictPairs
+        var pairMatches = strictPairs.isEmpty ? stationPairMatches(in: text, allowHanOne: true) : strictPairs
+        // 站名表没收录的站兜底:「XX站-YY站」形态按字面提取,不依赖站名表
+        if pairMatches.isEmpty {
+            pairMatches = literalStationPairMatches(in: text)
+        }
         let stationHits = findStations(in: text)
         let timeMatches = allMatches(of: "([01]?\\d|2[0-3]):[0-5]\\d", in: text)
 
@@ -191,6 +195,27 @@ enum TicketMailParser {
     private static let strictPairRegex = makePairRegex(separators: "-—－–—至到~→＞>")
     /// 「一」只给 2015 年前的老邮件当破折号用,单独一档,避免推荐文案拼出假区间
     private static let loosePairRegex = makePairRegex(separators: "-—－–—至到~→＞>一")
+
+    /// 字面兜底:两侧都带「站」字的站对(北京丰台站-深圳东站),不查站名表直接按形态提取
+    private static let literalPairRegex = try? NSRegularExpression(
+        pattern: "(?<![\u{4e00}-\u{9fa5}])([\u{4e00}-\u{9fa5}]{2,5})站\\s*[-—－–—至到~→＞>]{1,3}\\s*([\u{4e00}-\u{9fa5}]{2,5})站(?![\u{4e00}-\u{9fa5}])")
+
+    private static func literalStationPairMatches(in text: String) -> [StationPair] {
+        guard let regex = literalPairRegex else { return [] }
+        var pairs: [StationPair] = []
+        let full = NSRange(text.startIndex..., in: text)
+        regex.enumerateMatches(in: text, range: full) { match, _, _ in
+            guard let match, match.numberOfRanges >= 3,
+                  let r1 = Range(match.range(at: 1), in: text),
+                  let r2 = Range(match.range(at: 2), in: text),
+                  let wholeRange = Range(match.range, in: text) else { return }
+            let from = normalizeStation(String(text[r1]))
+            let to = normalizeStation(String(text[r2]))
+            guard from != to else { return }
+            pairs.append(StationPair(range: wholeRange, from: from, to: to))
+        }
+        return pairs
+    }
 
     private static func makePairRegex(separators: String) -> NSRegularExpression? {
         let names = StationDirectory.shared.stations.map(\.n).sorted { $0.count > $1.count }
