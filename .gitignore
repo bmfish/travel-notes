@@ -11,3 +11,6 @@ build/
 
 # 临时文件
 *.log
+
+# IDE
+.idea/
