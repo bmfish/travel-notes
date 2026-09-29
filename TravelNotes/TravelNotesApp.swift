@@ -9,6 +9,7 @@ struct TravelNotesApp: App {
         if args.contains("-FootprintTab") { return 4 }
         if args.contains("-StatsTab") { return 3 }
         if args.contains("-TripTab") { return 2 }
+        if args.contains("-HomeTab") { return 1 }
         if args.contains("-BoardTab") { return 0 }
         return 0
     }()

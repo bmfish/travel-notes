@@ -31,6 +31,12 @@ struct SyncView: View {
                 candidateSection
             }
             .scrollDismissesKeyboard(.interactively)
+            // 纸面风格:与票根页/新增页一致
+            .scrollContentBackground(.hidden)
+            .background(Theme.paperBackground.ignoresSafeArea())
+            .listRowBackground(Theme.creamPaper)
+            .listRowSeparatorTint(Theme.ticketGray.opacity(0.25))
+            .tint(Theme.railBlue)
             .navigationTitle("邮件同步")
             .navigationBarTitleDisplayMode(.inline)
             .onAppear {

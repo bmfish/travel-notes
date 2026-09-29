@@ -40,6 +40,10 @@ struct HomeView: View {
                 }
             }
             .sheet(isPresented: $showingAdd) { AddEditView() }
+            .onAppear {
+                // 调试钩子:-AddSheet 启动即弹新增票根页,方便无头截图
+                if ProcessInfo.processInfo.arguments.contains("-AddSheet") { showingAdd = true }
+            }
             .sheet(item: $entryToEdit) { entry in AddEditView(entry: entry) }
             .confirmationDialog(
                 "删除这张票根?",
