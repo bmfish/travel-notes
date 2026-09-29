@@ -68,6 +68,7 @@ QQ 邮箱要求登录前发 `ID (...)` 命令(`IMAPClient`/`MailSyncEngine` 里�
 - `Services/TrainLiveService.swift`:12306 小程序「车次运行信息」接口(免登录,UA 伪装 MicroMessenger)→ 检票口/出站口/晚点;`platform()` 查车站大屏取站台(提前几天就有);`estimatedGate()` 出发当天检票口未公布时推导「预计检票口」——先用同车当日实测(同车固定站台固定口),同站台邻车只兜底。缓存:实时值 300 秒;**已查到的检票口(正式+预计)缓存到当天结束**,接口偶尔回 `--` 也不丢。`bigScreen()` 拉全站当日大屏(「大屏」页签用);车次运行信息里 `ticketStatus` 实测 1=候车 2=正在检票 3=已发车(无独立「停止检票」码);大屏接口偶发缺始发车(上游数据抖动),靠 300 秒缓存后自然恢复。
 - `Services/TrainScheduleService.swift`:12306 公开接口 → 站名电报码、车次内部编号、经停时刻表(供详情页到达时刻/日历用);按「车次+日期」缓存,历史日期查不到时按当前运行图兜底。
 - `Services/TripCalendar.swift`:EventKit 写系统日历 / 导出 `.ics`(详情页右上角 ➕),到达时刻查经停时刻表,出发前 2 小时提醒。
+- `Services/TripNotifications.swift`:行程本地通知——开车前 2 小时 / 预计开始检票(开车前 20 分钟)/ 即将停止检票(开车前 5 分钟);只排 48 小时内的行程,回前台全量重排(标识符 `trip-notify-*`),系统 64 条上限内;检票时刻 12306 不提前公布,按经验窗口预估。
 - `Views/TicketViews.swift`:红/蓝两套票面,纯 SwiftUI 矢量(无图片素材),微缩卡与全尺寸共用;装饰性票号由乘车日期确定性推导(`TicketInfo.serialText`)。
 - `Views/FootprintView.swift`:MapKit 强制深色 + 发光弧线(`RouteGeometry` 画大圆弧)。
 - `Services/Stations.swift` + `Resources/Stations.json`(~190 站):站名补全、坐标、里程估算(直线距离 × 1.25,同城多站合并;任一端缺坐标则里程不计)。

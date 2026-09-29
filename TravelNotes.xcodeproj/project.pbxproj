@@ -19,6 +19,7 @@
 		464E395F670D510F4E37C065 /* Keychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DCDE0E15B46A72822988C47 /* Keychain.swift */; };
 		54D7F0DF3FBC410A61262D43 /* TravelNotesApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDC108E80505DF165E030AA8 /* TravelNotesApp.swift */; };
 		569F6BC5307882EB90D8BB9F /* TicketMailParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66398E8910569CBED70CAC5F /* TicketMailParser.swift */; };
+		5D0B3865925453062C59006B /* TripNotifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2C875640D3DFC1A9FD585FB /* TripNotifications.swift */; };
 		7899253486276AD5A7592E38 /* MailSyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D9512507E2C98267B14CC95 /* MailSyncEngine.swift */; };
 		87109F78D23D4CED4377F172 /* PhotoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97E348A1F1ADE04F9321F5E1 /* PhotoStore.swift */; };
 		8F6B2E360625A4350B8BD613 /* BoardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00B13E826AF4D6816B857449 /* BoardView.swift */; };
@@ -56,6 +57,7 @@
 		B2F8520E6195BB7CF8FD0860 /* FootprintView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FootprintView.swift; sourceTree = "<group>"; };
 		B82D5DDF21F1625CADE43092 /* Stations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Stations.swift; sourceTree = "<group>"; };
 		BAC058B68A931597D863DFFC /* TrainScheduleService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrainScheduleService.swift; sourceTree = "<group>"; };
+		C2C875640D3DFC1A9FD585FB /* TripNotifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripNotifications.swift; sourceTree = "<group>"; };
 		CE5EF1759030C9D4426F039C /* SampleData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleData.swift; sourceTree = "<group>"; };
 		D27BD5144A43710FAFE88ADD /* TravelNotes.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = TravelNotes.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D59306F419C23FACE2DD11D8 /* TripView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripView.swift; sourceTree = "<group>"; };
@@ -156,6 +158,7 @@
 				30D19CCAB464A8FF70EF1F2D /* TrainLiveService.swift */,
 				BAC058B68A931597D863DFFC /* TrainScheduleService.swift */,
 				F0AC828E983F2A4E97CEA786 /* TripCalendar.swift */,
+				C2C875640D3DFC1A9FD585FB /* TripNotifications.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -256,6 +259,7 @@
 				9949E0FDEB1455537622BF2B /* TrainScheduleService.swift in Sources */,
 				54D7F0DF3FBC410A61262D43 /* TravelNotesApp.swift in Sources */,
 				C4D125CF6135EDCDBB8CFFE6 /* TripCalendar.swift in Sources */,
+				5D0B3865925453062C59006B /* TripNotifications.swift in Sources */,
 				E5B84B49C2722079927095B0 /* TripView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

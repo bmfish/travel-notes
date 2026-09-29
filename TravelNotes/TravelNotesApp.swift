@@ -57,6 +57,7 @@ struct AutoSyncOnActive: ViewModifier {
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { trigger() }
             }
+            .task { await TripNotifications.refresh(context: modelContext) }
     }
 
     private func trigger() {
@@ -70,5 +71,7 @@ struct AutoSyncOnActive: ViewModifier {
             UserDefaults.standard.set(args[k + 1], forKey: "mail.owner")
         }
         MailSyncEngine.shared.autoSyncIfNeeded(context: modelContext)
+        // 回前台重排行程通知(编辑/同步后保持最新)
+        Task { await TripNotifications.refresh(context: modelContext) }
     }
 }
