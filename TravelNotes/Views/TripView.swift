@@ -81,6 +81,9 @@ struct TripView: View {
                     }
                 }
                 .refreshable { await loadInfo() }
+                .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
+                    Task { await loadInfo() }
+                }
 
                 addButton
             }
@@ -278,6 +281,15 @@ private struct UpcomingTripCard: View {
         liveInfo?.stop(at: entry.fromStation)?.gateDisplay
     }
 
+    /// 检票状态(候车/正在检票/已发车),仅当天有。
+    /// 接口在列车在途时会给出未知码(10/空),此时若开车时刻已过,按已发车兜底
+    private var checkStatus: String? {
+        guard isToday, let stop = liveInfo?.stop(at: entry.fromStation) else { return nil }
+        if let text = stop.checkStateText { return text }
+        if let depart = entry.departTime, Date() > depart { return "已发车" }
+        return nil
+    }
+
     private var gateChipText: String {
         if let gateText { return gateText }
         if let gateEstimate { return "\(gateEstimate)(预计)" }
@@ -374,6 +386,9 @@ private struct UpcomingTripCard: View {
             }
 
             HStack(spacing: 8) {
+                if let checkStatus {
+                    CheckStatusChip(text: checkStatus, small: true)
+                }
                 liveChip(icon: "door.left.hand.open",
                          text: "检票口 \(gateChipText)",
                          tint: gateText == nil ? Theme.ticketGray : Theme.railBlue)

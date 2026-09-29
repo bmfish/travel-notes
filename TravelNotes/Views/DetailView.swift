@@ -395,8 +395,19 @@ private struct LiveInfoCard: View {
         return "出发当天公布"
     }
 
+    private var checkStatus: String? {
+        guard isToday, let stop = liveInfo?.stop(at: entry.fromStation) else { return nil }
+        if let text = stop.checkStateText { return text }
+        // 接口在列车在途时会给未知码(10/空),开车时刻已过则按已发车兜底
+        if let depart = entry.departTime, Date() > depart { return "已发车" }
+        return nil
+    }
+
     var body: some View {
         HStack(spacing: 8) {
+            if let checkStatus {
+                CheckStatusChip(text: checkStatus)
+            }
             chip(icon: "door.left.hand.open",
                  text: "检票口 \(gateChipText)",
                  tint: gateText == nil ? Theme.ticketGray : Theme.railBlue)
@@ -416,6 +427,10 @@ private struct LiveInfoCard: View {
         .padding(14)
         .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.8)))
         .task { await load() }
+        .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
+            guard isToday else { return }
+            Task { await load() }
+        }
     }
 
     private func chip(icon: String, text: String, tint: Color) -> some View {
