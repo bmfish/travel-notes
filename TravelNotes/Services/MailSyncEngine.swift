@@ -111,13 +111,18 @@ final class MailSyncEngine: ObservableObject {
 
             statusText = "打开邮箱…"
 
-            // 阶段一:多文件夹扫描 —— 扫全部文件夹(老邮件可能被归档到自建文件夹,名字里不一定带 12306)
+            // 阶段一:多文件夹扫描 —— 扫全部文件夹(老邮件可能被归档到自建文件夹,名字里不一定带 12306);
+            // 服务器标志为 \Sent/\Drafts/\Junk/\Trash 的系统文件夹不会有购票邮件,跳过
             var mails: [FetchedMail] = []
             var folders = ["INBOX"]
             let listRecords = try await resilient("list") { c in try await c.command("LIST \"\" \"*\"") }
             let listRegex = try? NSRegularExpression(pattern: "\"([^\"]+)\"\\s*$")
             for record in listRecords where record.text.hasPrefix("* LIST") {
                 guard !record.text.contains("\\NoSelect"),
+                      !record.text.contains("\\Sent"),
+                      !record.text.contains("\\Drafts"),
+                      !record.text.contains("\\Junk"),
+                      !record.text.contains("\\Trash"),
                       let regex = listRegex,
                       let match = regex.firstMatch(in: record.text, range: NSRange(record.text.startIndex..., in: record.text)),
                       let range = Range(match.range(at: 1), in: record.text) else { continue }
@@ -255,31 +260,15 @@ final class MailSyncEngine: ObservableObject {
         let isChange: Bool
     }
 
-    /// 邮件 UID 发现:增量走 SEARCH;全量不依赖 SEARCH(老邮件 QQ 的 SEARCH 可能查不到),
-    /// 按 UID 范围拉头部自己筛发件人/主题
+    /// 邮件 UID 发现:增量/全量都按发件人 SEARCH(2026-09 实测决策:
+    /// 全量拉 5829 封头部要 5 分多钟,SEARCH 一条命令秒回;极老邮件若 SEARCH 查不到会漏,接受此取舍)
     nonisolated static func discoverUIDs(_ client: IMAPClient, folder: String, since: String, fullHistory: Bool) async throws -> [String] {
-        if !fullHistory {
-            let records = try await client.command("UID SEARCH SINCE \(since) FROM \"12306\"")
+        if fullHistory {
+            let records = try await client.command("UID SEARCH FROM \"12306\"", timeout: 90)
             return parseSearchRecords(records)
         }
-        let allRecords = try await client.command("UID FETCH 1:* (UID)", timeout: 90)
-        let allUIDs = allRecords.compactMap { extractUID($0.text) }
-        var kept: [String] = []
-        for chunk in chunked(allUIDs, size: 50) {
-            let records = try await client.command(
-                "UID FETCH \(chunk.joined(separator: ",")) (BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID)])",
-                timeout: 90)
-            for record in records where record.text.contains("FETCH") {
-                guard let raw = record.literals.first, let uid = extractUID(record.text) else { continue }
-                let subject = MIME.decodeEncodedWords(extractHeader("subject", raw: raw) ?? "")
-                let from = MIME.decodeEncodedWords(extractHeader("from", raw: raw) ?? "")
-                let isRefundOrChange = subject.contains("退票") || subject.contains("退单") || subject.contains("改签")
-                if isRefundOrChange || TicketMailParser.looksLikeTicketMail(from: from, subject: subject) {
-                    kept.append(uid)
-                }
-            }
-        }
-        return kept
+        let records = try await client.command("UID SEARCH SINCE \(since) FROM \"12306\"")
+        return parseSearchRecords(records)
     }
 
     /// 批量拉取完整邮件;解码放后台线程,全量同步几百封时不把 UI 卡死
@@ -357,12 +346,16 @@ final class MailSyncEngine: ObservableObject {
             _ = try await client.command("LOGIN \"\(Self.escape(user))\" \"\(Self.escape(pass))\"")
             lines.append("login ok")
 
-            // 与 sync 完全一致的路径:全部文件夹 → 全量 UID 头部筛选 → 批量拉取解码
+            // 与 sync 完全一致的路径:全部文件夹(跳过系统文件夹)→ SEARCH 发件人 → 批量拉取解码
             var folders = ["INBOX"]
             let listRecords = try await client.command("LIST \"\" \"*\"")
             let listRegex = try? NSRegularExpression(pattern: "\"([^\"]+)\"\\s*$")
             for record in listRecords where record.text.hasPrefix("* LIST") {
                 guard !record.text.contains("\\NoSelect"),
+                      !record.text.contains("\\Sent"),
+                      !record.text.contains("\\Drafts"),
+                      !record.text.contains("\\Junk"),
+                      !record.text.contains("\\Trash"),
                       let regex = listRegex,
                       let match = regex.firstMatch(in: record.text, range: NSRange(record.text.startIndex..., in: record.text)),
                       let range = Range(match.range(at: 1), in: record.text) else { continue }
