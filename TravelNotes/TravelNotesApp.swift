@@ -49,6 +49,10 @@ struct TravelNotesApp: App {
             #else
             .modelContainer(for: [TicketEntry.self, MailCandidate.self])
             #endif
+            #if targetEnvironment(macCatalyst)
+            // Mac 上默认把 TabView 渲染成工具栏下拉菜单,改为与手机一致的底部标签栏
+            .tabViewStyle(.tabBarOnly)
+            #endif
             .task { SnapshotSupport.runIfNeeded() }
             .task { await MailSyncEngine.runSelfTestIfNeeded() }
             .task { TripCalendar.runSelfTestIfNeeded() }
