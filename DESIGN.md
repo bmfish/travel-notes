@@ -106,7 +106,7 @@ Form 分组:
 
 ## 6. 技术要点
 
-- iOS 17+ / SwiftUI / SwiftData(2026 年覆盖面足够,个人 App 不背老系统包袱)
+- iOS 26+ / SwiftUI / SwiftData(2026 年覆盖面足够,个人 App 不背老系统包袱)
 - 相册访问用 PhotosUI 的 `PhotosPicker`(系统内置,无需权限弹窗即可选图,导出到沙盒后才算 App 数据)
 - 站名补全/坐标:随包内置一份 JSON(站名、拼音、经纬度)
 - 无 CocoaPods/SPM 第三方依赖,拉下来就能编译

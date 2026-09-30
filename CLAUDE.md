@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-「高铁笔记」(TravelNotes):个人自用 iOS App,每张车票渲染成一张手绘风车票,票下挂日记与照片。SwiftUI + SwiftData,iOS 17+,无第三方依赖、无后端、数据全存手机本地。UI 文案、注释均为中文——新代码保持中文。
+「高铁笔记」(TravelNotes):个人自用 iOS App,每张车票渲染成一张手绘风车票,票下挂日记与照片。SwiftUI + SwiftData,iOS 26+,无第三方依赖、无后端、数据全存手机本地。UI 文案、注释均为中文——新代码保持中文。
 
 产品/视觉设计与统计口径见 `DESIGN.md`,功能清单与真机运行说明见 `README.md`。
 
@@ -41,7 +41,7 @@ scripts/install_mac.sh
 | `-UITestSeed` | 注入演示数据(`Models/SampleData.swift`) |
 | `-BoardTab` / `-TripTab` / `-StatsTab` / `-FootprintTab` / `-SyncTab` | 启动直达对应 Tab(顺序:大屏/票根/行程/统计,足迹和同步在 More 里) |
 | `-MailUser x -MailPass y [-MailOwner 名字]` | 预置邮箱账号并触发同步;开启 trace 到沙盒临时目录 `tn_trace.log` |
-| `-MailSyncTest [-MailHost/-MailPort/-MailSince...]` | 同步链路自检,结果写 `tn_sync.txt`(`/tmp` 与沙盒临时目录都落一份)后退出(可指向 `scripts/mock_imap.py` 本地 mock;注意模拟器 iOS 17+ 是虚拟机,127.0.0.1 连不到 Mac,要传 Mac 局域网 IP + `-MailPort 8025`,8025 端口自动明文) |
+| `-MailSyncTest [-MailHost/-MailPort/-MailSince...]` | 同步链路自检,结果写 `tn_sync.txt`(`/tmp` 与沙盒临时目录都落一份)后退出(可指向 `scripts/mock_imap.py` 本地 mock;注意模拟器 iOS 26+ 是虚拟机,127.0.0.1 连不到 Mac,要传 Mac 局域网 IP + `-MailPort 8025`,8025 端口自动明文) |
 | `-HomeTab` | 启动直达票根页(其余 Tab 参数见上) |
 | `-AddSheet` | 配合 `-HomeTab` 使用:启动即弹新增票根页,方便无头截图 |
 | `-BoardRoute 车次号` | 配合 `-BoardTab`:加载完自动推入该车经停时刻表详情,方便无头截图 |
