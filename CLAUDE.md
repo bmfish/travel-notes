@@ -22,6 +22,9 @@ xcodebuild -project TravelNotes.xcodeproj -scheme TravelNotes \
 # Mac 本地构建没有 7 天签名限制,适合常驻查行程/记日记;数据与手机各自独立
 xcodebuild -project TravelNotes.xcodeproj -scheme TravelNotes \
   -destination 'platform=macOS,variant=Mac Catalyst' build
+
+# 一键构建 + 安装到 /Applications(Spotlight/Launchpad 可搜,同 bundle id 覆盖安装不丢数据)
+scripts/install_mac.sh
 ```
 
 - 工程由 `project.yml` + XcodeGen 生成。**增删文件也要**先执行 `~/development/bin/xcodegen generate`(pbxproj 是显式文件引用;xcodegen 装在 `~/development/bin`,不在 PATH);增删 target/构建设置同样要重新生成。
