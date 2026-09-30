@@ -20,6 +20,7 @@
 		54D7F0DF3FBC410A61262D43 /* TravelNotesApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDC108E80505DF165E030AA8 /* TravelNotesApp.swift */; };
 		569F6BC5307882EB90D8BB9F /* TicketMailParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66398E8910569CBED70CAC5F /* TicketMailParser.swift */; };
 		5D0B3865925453062C59006B /* TripNotifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2C875640D3DFC1A9FD585FB /* TripNotifications.swift */; };
+		650751ACC9E5B8ED1CAB4D75 /* AppData.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9AC46EEA0F956F74686FBD5 /* AppData.swift */; };
 		7899253486276AD5A7592E38 /* MailSyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D9512507E2C98267B14CC95 /* MailSyncEngine.swift */; };
 		87109F78D23D4CED4377F172 /* PhotoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97E348A1F1ADE04F9321F5E1 /* PhotoStore.swift */; };
 		8F6B2E360625A4350B8BD613 /* BoardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00B13E826AF4D6816B857449 /* BoardView.swift */; };
@@ -49,7 +50,6 @@
 		59E50BAFCB9D6040786D8AA5 /* DetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailView.swift; sourceTree = "<group>"; };
 		5EEA259AADBF2016936775D2 /* Stations.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = Stations.json; sourceTree = "<group>"; };
 		66398E8910569CBED70CAC5F /* TicketMailParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TicketMailParser.swift; sourceTree = "<group>"; };
-		691D7A6C7BC417D826C3A170 /* TravelNotes.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TravelNotes.entitlements; sourceTree = "<group>"; };
 		8F846C97D7CAC1BB047BEBD8 /* TicketEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TicketEntry.swift; sourceTree = "<group>"; };
 		97E348A1F1ADE04F9321F5E1 /* PhotoStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoStore.swift; sourceTree = "<group>"; };
 		A3F3B555D0E8C047D28700A3 /* SnapshotSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotSupport.swift; sourceTree = "<group>"; };
@@ -67,6 +67,7 @@
 		E3597E02BC7C15DF6AB8DD1D /* TicketViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TicketViews.swift; sourceTree = "<group>"; };
 		EDC108E80505DF165E030AA8 /* TravelNotesApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TravelNotesApp.swift; sourceTree = "<group>"; };
 		F0AC828E983F2A4E97CEA786 /* TripCalendar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripCalendar.swift; sourceTree = "<group>"; };
+		F9AC46EEA0F956F74686FBD5 /* AppData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppData.swift; sourceTree = "<group>"; };
 		FD09BFD75C0F17F8E1917E88 /* AddEditView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddEditView.swift; sourceTree = "<group>"; };
 		FFE92724140AAAC37939E021 /* SyncView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -109,7 +110,6 @@
 			children = (
 				A7FD49004D7F6BE9AE3F2C23 /* Assets.xcassets */,
 				3AF2DBB6784DA28C1C0EBE06 /* Info.plist */,
-				691D7A6C7BC417D826C3A170 /* TravelNotes.entitlements */,
 				EDC108E80505DF165E030AA8 /* TravelNotesApp.swift */,
 				8CE2B9A9880DECD6C0804ED9 /* Models */,
 				2EB6B8EDA2DDD354113A5026 /* Resources */,
@@ -133,6 +133,7 @@
 		A3B9E7D0E96FA021D4639A4C /* Shared */ = {
 			isa = PBXGroup;
 			children = (
+				F9AC46EEA0F956F74686FBD5 /* AppData.swift */,
 				16D62E0F217919BEC9C2F072 /* Theme.swift */,
 			);
 			path = Shared;
@@ -238,6 +239,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				14BFB2F70C742AA1CF15A49A /* AddEditView.swift in Sources */,
+				650751ACC9E5B8ED1CAB4D75 /* AppData.swift in Sources */,
 				8F6B2E360625A4350B8BD613 /* BoardView.swift in Sources */,
 				06DF3C82AC8BFA2B2FABCC9A /* DetailView.swift in Sources */,
 				ECDD9609F85D9D40DCAD7CD2 /* FootprintView.swift in Sources */,
@@ -272,7 +274,6 @@
 		0AB9F566860E38414DC182F6 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = TravelNotes/TravelNotes.entitlements;
 				INFOPLIST_FILE = TravelNotes/Info.plist;
 				PRODUCT_BUNDLE_IDENTIFIER = com.bmfish.TravelNotes;
 			};
@@ -281,7 +282,6 @@
 		3649529E5FE156222FF528CE /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = TravelNotes/TravelNotes.entitlements;
 				INFOPLIST_FILE = TravelNotes/Info.plist;
 				PRODUCT_BUNDLE_IDENTIFIER = com.bmfish.TravelNotes;
 			};

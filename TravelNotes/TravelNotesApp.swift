@@ -3,6 +3,12 @@ import SwiftData
 
 @main
 struct TravelNotesApp: App {
+    #if targetEnvironment(macCatalyst)
+    private static let catalystContainer = try! ModelContainer(
+        for: Schema([TicketEntry.self, MailCandidate.self]),
+        configurations: [ModelConfiguration(url: AppData.storeURL!)])
+    #endif
+
     @State private var tabSelection: Int = {
         let args = ProcessInfo.processInfo.arguments
         if args.contains("-SyncTab") { return 5 }
@@ -37,7 +43,12 @@ struct TravelNotesApp: App {
                     .tabItem { Label("同步", systemImage: "envelope.arrow.triangle.branch") }
             }
             .modifier(AutoSyncOnActive())
+            #if targetEnvironment(macCatalyst)
+            // 免费团队签不出 App Sandbox,Mac 版未沙盒运行,显式指定库避免共享 default.store
+            .modelContainer(Self.catalystContainer)
+            #else
             .modelContainer(for: [TicketEntry.self, MailCandidate.self])
+            #endif
             .task { SnapshotSupport.runIfNeeded() }
             .task { await MailSyncEngine.runSelfTestIfNeeded() }
             .task { TripCalendar.runSelfTestIfNeeded() }

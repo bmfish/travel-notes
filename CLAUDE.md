@@ -19,7 +19,10 @@ xcodebuild -project TravelNotes.xcodeproj -scheme TravelNotes \
   -destination 'platform=iOS Simulator,name=iPhone 18 Pro' build
 
 # Mac Catalyst(Xcode 里目的地选「My Mac (Mac Catalyst)」⌘R 即可):
-# Mac 本地构建没有 7 天签名限制,适合常驻查行程/记日记;数据与手机各自独立
+# Mac 本地构建没有 7 天签名限制,适合常驻查行程/记日记;数据与手机各自独立。
+# 注意:免费团队签不出 App Sandbox(Catalyst 分发才强制沙盒),Mac 版未沙盒运行,
+# 数据固定在 ~/Library/Application Support/TravelNotes/(TravelNotes.store + Photos/),
+# 备份 = 拷走该目录;不要让数据落回共享的 default.store 或用户 ~/Documents(AppData.swift 已约束)
 xcodebuild -project TravelNotes.xcodeproj -scheme TravelNotes \
   -destination 'platform=macOS,variant=Mac Catalyst' build
 

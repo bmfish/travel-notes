@@ -1,11 +1,10 @@
 import UIKit
 import ImageIO
 
-/// 照片统一压缩后存沙盒 Documents/Photos/,备份时拷走 Documents 即可
+/// 照片统一压缩后存沙盒 Documents/Photos/(Mac Catalyst 见 AppData 注释),备份时拷走该目录即可
 enum PhotoStore {
     static var photosDir: URL {
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let dir = docs.appendingPathComponent("Photos", isDirectory: true)
+        let dir = AppData.photosDir
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }

@@ -22,8 +22,6 @@ targets:
   TravelNotes:
     type: application
     platform: iOS
-    entitlements:
-      path: TravelNotes/TravelNotes.entitlements
     sources:
       - path: TravelNotes
     info:
