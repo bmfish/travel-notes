@@ -195,6 +195,7 @@ final class MailSyncEngine: ObservableObject {
 
             // 阶段四:购票/改签/候补兑现邮件 → 候选票根
             var newCount = 0
+            var noTicketMails = 0
             var knownTripKeys = Self.existingTripKeys(context: context)
             for mail in mails {
                 guard !mail.isRefund else { continue }
@@ -202,7 +203,9 @@ final class MailSyncEngine: ObservableObject {
                     // 同订单多次改签,只有最后一次的新票有效
                     guard let order = mail.orderNumber, lastChangeByOrder[order]?.uid == mail.uid else { continue }
                 }
-                for ticket in TicketMailParser.parse(subject: mail.subject, bodyText: mail.bodyText, owner: owner, mailDate: mail.mailDate) {
+                let tickets = TicketMailParser.parse(subject: mail.subject, bodyText: mail.bodyText, owner: owner, mailDate: mail.mailDate)
+                if tickets.isEmpty { noTicketMails += 1 }
+                for ticket in tickets {
                     let tripKey = Self.tripKey(trainNo: ticket.trainNo, from: ticket.fromStation,
                                                to: ticket.toStation, date: ticket.date)
                     guard !knownTripKeys.contains(tripKey) else { continue }
@@ -228,7 +231,12 @@ final class MailSyncEngine: ObservableObject {
                 try? context.save()
             }
             markSynced()
-            statusText = newCount > 0 ? "同步完成,新增 \(newCount) 条待确认票根" : "同步完成,没有新的候选票根"
+            var done = newCount > 0 ? "同步完成,新增 \(newCount) 条待确认票根" : "同步完成,没有新的候选票根"
+            if noTicketMails > 0 {
+                // 多为替他人代买的车票(只保留本人票),提示用户这批邮件没被丢弃于无形
+                done += ",\(noTicketMails) 封邮件未识别出本人票根"
+            }
+            statusText = done
         } catch {
             statusText = "同步失败:\(error.localizedDescription)"
         }
@@ -336,7 +344,9 @@ final class MailSyncEngine: ObservableObject {
             let host = Self.value(of: "-MailHost", in: args) ?? "imap.qq.com"
             let defaultPort = host == "127.0.0.1" ? "8025" : "993"
             let port = UInt16(Self.value(of: "-MailPort", in: args) ?? defaultPort) ?? 993
-            let useTLS = host != "127.0.0.1"
+            // 模拟器(iOS 17+)跑在虚拟机里,127.0.0.1 连不到 Mac,mock 要用 Mac 局域网 IP;
+            // 与 server() 同一规则:mock 端口 8025 明文
+            let useTLS = host != "127.0.0.1" && port != 8025
             let user = Self.value(of: "-MailUser", in: args) ?? "test@qq.com"
             let pass = Self.value(of: "-MailPass", in: args) ?? "authcode123"
 
