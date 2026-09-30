@@ -42,16 +42,15 @@ struct TravelNotesApp: App {
                     .tag(5)
                     .tabItem { Label("同步", systemImage: "envelope.arrow.triangle.branch") }
             }
+            #if targetEnvironment(macCatalyst)
+            .bottomTabBarOnMac()
+            #endif
             .modifier(AutoSyncOnActive())
             #if targetEnvironment(macCatalyst)
             // 免费团队签不出 App Sandbox,Mac 版未沙盒运行,显式指定库避免共享 default.store
             .modelContainer(Self.catalystContainer)
             #else
             .modelContainer(for: [TicketEntry.self, MailCandidate.self])
-            #endif
-            #if targetEnvironment(macCatalyst)
-            // Mac 上默认把 TabView 渲染成工具栏下拉菜单,改为与手机一致的底部标签栏
-            .tabViewStyle(.tabBarOnly)
             #endif
             .task { SnapshotSupport.runIfNeeded() }
             .task { await MailSyncEngine.runSelfTestIfNeeded() }
@@ -60,6 +59,20 @@ struct TravelNotesApp: App {
         }
     }
 }
+
+#if targetEnvironment(macCatalyst)
+private extension View {
+    /// Mac 上默认把 TabView 渲染成工具栏下拉菜单;.tabBarOnly(仅 iOS 18+)改回与手机一致的底部标签栏
+    @ViewBuilder
+    func bottomTabBarOnMac() -> some View {
+        if #available(iOS 18.0, *) {
+            self.tabViewStyle(.tabBarOnly)
+        } else {
+            self
+        }
+    }
+}
+#endif
 
 /// 回到前台时自动增量同步
 struct AutoSyncOnActive: ViewModifier {
