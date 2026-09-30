@@ -17,6 +17,11 @@ open TravelNotes.xcodeproj
 # 命令行构建(模拟器)
 xcodebuild -project TravelNotes.xcodeproj -scheme TravelNotes \
   -destination 'platform=iOS Simulator,name=iPhone 18 Pro' build
+
+# Mac Catalyst(Xcode 里目的地选「My Mac (Mac Catalyst)」⌘R 即可):
+# Mac 本地构建没有 7 天签名限制,适合常驻查行程/记日记;数据与手机各自独立
+xcodebuild -project TravelNotes.xcodeproj -scheme TravelNotes \
+  -destination 'platform=macOS,variant=Mac Catalyst' build
 ```
 
 - 工程由 `project.yml` + XcodeGen 生成。**增删文件也要**先执行 `~/development/bin/xcodegen generate`(pbxproj 是显式文件引用;xcodegen 装在 `~/development/bin`,不在 PATH);增删 target/构建设置同样要重新生成。
