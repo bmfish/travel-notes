@@ -45,8 +45,9 @@ enum TicketMailParser {
         }
         guard !text.isEmpty else { return [] }
 
-        // 车次号:前后不能是字母数字,避免命中订单号(如 EC58571374 里的 C5857)
-        let trainMatches = allMatches(of: "(?<![A-Za-z0-9])[GDCTKZLYS]\\d{1,4}(?!\\d)", in: text)
+        // 车次号:前后不能是字母数字,避免命中订单号(如 EC58571374 里的 C5857);
+        // 纯数字车次(1461次列车)没有字母前缀,靠「次列车」后缀锚定
+        let trainMatches = allMatches(of: "(?<![A-Za-z0-9])(?:[GDCTKZLYS]\\d{1,4}(?!\\d)|\\d{1,4}(?=次列车))", in: text)
         guard !trainMatches.isEmpty else { return [] }
 
         // 邮件里的编号乘车人列表("1.张三," "2.高小玉,"),用于只保留本人票
@@ -470,6 +471,30 @@ enum TicketMailParser {
             "\($0.date.map { Fmt.dotDate.string(from: $0) } ?? "?") \($0.departTimeText ?? "?") " +
             "\($0.coach ?? "?")\($0.seat ?? "?") \($0.seatClass ?? "?") \($0.price.map { String($0) } ?? "?")"
         }.joined(separator: " ; "))
+
+        // 回归:直达特快 Z 字头(2026-09 真实邮件,曾因车次正则缺 Z 整张票解析不出)
+        let zTickets = parse(subject: "网上购票系统-用户支付通知",
+                             bodyText: """
+                             尊敬的张三先生：您好！您于2026年09月29日成功购买了1张车票，票款共计254.50元，订单号码EC81547857。所购车票信息如下：
+                             1.张三，2026年10月13日03:49开，北京丰台站-深圳东站，Z181次列车，3车10号，硬座，成人票，票价254.5元，电子客票。
+                             """,
+                             owner: "张三", mailDate: date(2026, 9, 29, 20))
+        let z = zTickets.first
+        check("z181.count", zTickets.count == 1)
+        check("z181.train", z?.trainNo == "Z181")
+        check("z181.route", z?.fromStation == "北京丰台" && z?.toStation == "深圳东")
+        check("z181.date", z?.date == date(2026, 10, 13))
+        check("z181.time", z?.departTimeText == "03:49")
+        check("z181.coachSeat", z?.coach == "3车" && z?.seat == "10号")
+        check("z181.class", z?.seatClass == "硬座")
+        check("z181.price", z?.price == 254.5)
+
+        // 回归:纯数字车次(无字母前缀,靠「次列车」锚定,且不误命中订单号/日期)
+        let digitTickets = parse(subject: "网上购票系统-用户支付通知",
+                                 bodyText: "1.张三，2026年05月01日09:15开，上海-南京，1461次列车，05车12号，硬座，票价47.5元。",
+                                 owner: "张三", mailDate: date(2026, 4, 30))
+        check("digit.train", digitTickets.first?.trainNo == "1461")
+        check("digit.route", digitTickets.first?.fromStation == "上海" && digitTickets.first?.toStation == "南京")
 
         try? out.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
         print("PARSERTESTFILE \(url.path)")
