@@ -2,13 +2,31 @@
 
 > 每张车票 = 一页日记。iOS 原生个人 App:SwiftUI + SwiftData,无第三方依赖、无后端,数据全存手机本地。
 
+![platform](https://img.shields.io/badge/platform-iOS%2017%2B-black) ![framework](https://img.shields.io/badge/SwiftUI%20%2B%20SwiftData-orange) ![deps](https://img.shields.io/badge/第三方依赖-0-green) ![privacy](https://img.shields.io/badge/数据-全本地-blue)
+
+<p align="center">
+  <img src="docs/images/footprint.png" width="215" alt="足迹"/>
+  <img src="docs/images/stats.png" width="215" alt="统计"/>
+  <br/>
+  <img src="docs/images/home.png" width="170" alt="票根收藏册"/>
+  <img src="docs/images/trips.png" width="170" alt="行程"/>
+  <img src="docs/images/board.png" width="170" alt="车站大屏"/>
+</p>
+
+## English
+
+TravelNotes is a native iOS personal app that turns every train ticket into a diary page. Pure SwiftUI + SwiftData, zero third-party dependencies, no backend — all data stays on your phone. It auto-syncs 12306 confirmation emails over IMAP, draws retro ticket artworks, renders your travel footprint on a dark map, shows a live station departure board, and charts 13 years of journeys.
+
 产品与视觉设计见 [DESIGN.md](DESIGN.md)。
 
-## 功能(v1.2)
+## 功能
 
 - 首页「票根收藏册」:按年份分组的车票时间线,顶部统计(票根数 / 途经车站 / 里程估算)
-- 「足迹」页:暗色地图上用发光绿弧线连起所有行程,车站发光点 + 城市名标注,
+- 「足迹」页:暗色地图上用发光弧线连起所有行程,车站发光点 + 城市名标注,
   底部深色统计卡(车站 / 次数 / 城市 / 里程),风格参考航旅纵横足迹页
+- 「大屏」:车站实时站牌,出发/终到班次、检票口、站台与候车状态一目了然,
+  支持多车站收藏切换、按昨天/今天/明天筛选、搜车次或车站
+- 「行程」页:未开始的旅程卡片(检票口/站台预测、发车倒计时),一周内 / 更远的行程分组
 - 「同步」页:QQ 邮箱 IMAP 全自动同步订票邮件(12306):
   - 填一次邮箱 + 授权码(存本机钥匙串,不上传),之后打开 App 自动增量同步
   - 解析出的候选票根需要你点开确认后才会入库(日期/车次/区间/席别/票价自动识别)
@@ -47,5 +65,6 @@ open TravelNotes.xcodeproj
 - `TravelNotes/Services/MailSyncEngine.swift`:同步引擎(增量、去重、批量 FETCH)
 - `TravelNotes/Views/FootprintView.swift`:足迹地图;`Views/TicketViews.swift`:红/蓝票面,全部矢量绘制
 - 数据备份:直接拷贝 App 沙盒 `Documents/`(sqlite + Photos 文件夹)
-- 调试参数:启动参数加 `-UITestSeed` 注入演示数据;`-SyncTab`/`-FootprintTab` 直达对应 Tab;
-  `-MailUser x -MailPass y` 预置邮箱账号并触发同步;`-MailSyncTest` 走自检流程输出到 /tmp/tn_sync.txt
+- 调试参数:启动参数加 `-UITestSeed` 注入演示数据;`-BoardTab`/`-HomeTab`/`-TripTab`/`-StatsTab`/
+  `-FootprintTab`/`-SyncTab` 直达对应 Tab;`-MailUser x -MailPass y` 预置邮箱账号并触发同步;
+  `-MailSyncTest` 走自检流程输出到 /tmp/tn_sync.txt
