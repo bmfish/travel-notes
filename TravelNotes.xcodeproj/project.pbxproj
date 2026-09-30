@@ -49,6 +49,7 @@
 		59E50BAFCB9D6040786D8AA5 /* DetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailView.swift; sourceTree = "<group>"; };
 		5EEA259AADBF2016936775D2 /* Stations.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = Stations.json; sourceTree = "<group>"; };
 		66398E8910569CBED70CAC5F /* TicketMailParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TicketMailParser.swift; sourceTree = "<group>"; };
+		691D7A6C7BC417D826C3A170 /* TravelNotes.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TravelNotes.entitlements; sourceTree = "<group>"; };
 		8F846C97D7CAC1BB047BEBD8 /* TicketEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TicketEntry.swift; sourceTree = "<group>"; };
 		97E348A1F1ADE04F9321F5E1 /* PhotoStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoStore.swift; sourceTree = "<group>"; };
 		A3F3B555D0E8C047D28700A3 /* SnapshotSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotSupport.swift; sourceTree = "<group>"; };
@@ -108,6 +109,7 @@
 			children = (
 				A7FD49004D7F6BE9AE3F2C23 /* Assets.xcassets */,
 				3AF2DBB6784DA28C1C0EBE06 /* Info.plist */,
+				691D7A6C7BC417D826C3A170 /* TravelNotes.entitlements */,
 				EDC108E80505DF165E030AA8 /* TravelNotesApp.swift */,
 				8CE2B9A9880DECD6C0804ED9 /* Models */,
 				2EB6B8EDA2DDD354113A5026 /* Resources */,
@@ -270,6 +272,7 @@
 		0AB9F566860E38414DC182F6 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = TravelNotes/TravelNotes.entitlements;
 				INFOPLIST_FILE = TravelNotes/Info.plist;
 				PRODUCT_BUNDLE_IDENTIFIER = com.bmfish.TravelNotes;
 			};
@@ -278,6 +281,7 @@
 		3649529E5FE156222FF528CE /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = TravelNotes/TravelNotes.entitlements;
 				INFOPLIST_FILE = TravelNotes/Info.plist;
 				PRODUCT_BUNDLE_IDENTIFIER = com.bmfish.TravelNotes;
 			};
@@ -296,10 +300,10 @@
 				MARKETING_VERSION = 1.0.0;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
 				SUPPORTS_MACCATALYST = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
@@ -316,10 +320,10 @@
 				MARKETING_VERSION = 1.0.0;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
 				SUPPORTS_MACCATALYST = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
