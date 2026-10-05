@@ -182,9 +182,30 @@ enum TicketMailParser {
             let from = normalizeStation(String(text[r1]))
             let to = normalizeStation(String(text[r2]))
             guard from != to else { return }
+            if isTruncated(String(text[r1]), at: r1.upperBound, in: text)
+                || isTruncated(String(text[r2]), at: r2.upperBound, in: text) { return }
             pairs.append(StationPair(range: wholeRange, from: from, to: to))
         }
         return pairs
+    }
+
+    private static let allStationNames: Set<String> = Set(StationDirectory.shared.stations.map(\.n))
+
+    /// 命中是否是被截断的长站名:站名表缺「郑州西」时,alternation 会以「郑州」前缀命中「郑州西站」,
+    /// 把短名连同「站」吃掉留下「西」。命中文本向后扩 1-2 字若能拼出已知站,即视为截断命中,
+    /// 丢弃该站对,交给字面兜底/站名扫描按全名取
+    private static func isTruncated(_ raw: String, at end: String.Index, in text: String) -> Bool {
+        var base = raw
+        if base.count > 2, base.hasSuffix("站") { base.removeLast() }
+        var extended = base
+        var idx = end
+        for _ in 0..<2 {
+            guard idx < text.endIndex else { break }
+            extended.append(text[idx])
+            idx = text.index(after: idx)
+            if allStationNames.contains(extended) { return true }
+        }
+        return false
     }
 
     private static func normalizeStation(_ s: String) -> String {
@@ -488,6 +509,18 @@ enum TicketMailParser {
         check("z181.coachSeat", z?.coach == "3车" && z?.seat == "10号")
         check("z181.class", z?.seatClass == "硬座")
         check("z181.price", z?.price == 254.5)
+
+        // 回归:郑州西方向(2026-10 真实邮件)。站名表曾缺「郑州西」,回程「洛阳龙门站-郑州西站」
+        // 被「郑州」前缀命中截断成「郑州」,去程则因分隔符校验失败走了字面兜底才侥幸正确
+        let zzxReturn = parse(subject: "网上购票系统-用户支付通知",
+                              bodyText: "1.曹志宇，2026年10月03日19:36开，洛阳龙门站-郑州西站，G3290次列车，05车12F号，二等座，票价50元。",
+                              owner: "曹志宇", mailDate: date(2026, 10, 2, 18))
+        check("zzx.return.route", zzxReturn.first?.fromStation == "洛阳龙门" && zzxReturn.first?.toStation == "郑州西")
+        check("zzx.return.train", zzxReturn.first?.trainNo == "G3290")
+        let zzxOutbound = parse(subject: "网上购票系统-用户支付通知",
+                                bodyText: "1.曹志宇，2026年10月03日13:58开，郑州西站-洛阳龙门站，G3289次列车，11车13A号，二等座，票价50元。",
+                                owner: "曹志宇", mailDate: date(2026, 10, 2, 18))
+        check("zzx.outbound.route", zzxOutbound.first?.fromStation == "郑州西" && zzxOutbound.first?.toStation == "洛阳龙门")
 
         // 回归:纯数字车次(无字母前缀,靠「次列车」锚定,且不误命中订单号/日期)
         let digitTickets = parse(subject: "网上购票系统-用户支付通知",

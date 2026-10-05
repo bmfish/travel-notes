@@ -137,6 +137,8 @@ struct DarkMapView: UIViewRepresentable {
             for e in entries {
                 guard let f = e.fromStation.flatMap({ dir.resolve($0) }),
                       let t = e.toStation.flatMap({ dir.resolve($0) }) else { continue }
+                // 站名表扩容后部分小站没有坐标(0,0 占位),画弧线会拐到几内亚湾,跳过
+                guard f.lat != 0 || f.lng != 0, t.lat != 0 || t.lng != 0 else { continue }
                 let color = UIColor(TicketInfo(entry: e).routeColor)
                 map.addOverlays(RouteGeometry.arcOverlays(from: f.coord, to: t.coord, color: color))
                 allPoints.append(contentsOf: [f.coord, t.coord])

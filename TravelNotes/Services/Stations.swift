@@ -95,6 +95,8 @@ enum MileageEstimator {
         if let km = railCityPairs[cityKey] {
             return km
         }
+        // 站名表扩容后部分小站没有坐标(0,0 占位),按到(0,0)估会算出上万公里,宁缺毋滥返回 0
+        guard a.lat != 0 || a.lng != 0, b.lat != 0 || b.lng != 0 else { return 0 }
         func rad(_ d: Double) -> Double { d * .pi / 180 }
         let dLat = rad(b.lat - a.lat)
         let dLng = rad(b.lng - a.lng)
