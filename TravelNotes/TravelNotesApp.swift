@@ -134,7 +134,7 @@ private struct MacTabRoot: View {
 }
 #endif
 
-/// 回到前台时自动增量同步
+/// 回到前台先同步一次;保持打开期间每 10 分钟自动增量同步
 struct AutoSyncOnActive: ViewModifier {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
@@ -146,6 +146,10 @@ struct AutoSyncOnActive: ViewModifier {
                 if phase == .active { trigger() }
             }
             .task { await TripNotifications.refresh(context: modelContext) }
+            .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
+                guard scenePhase == .active else { return }
+                MailSyncEngine.shared.autoSyncIfNeeded(context: modelContext)
+            }
     }
 
     private func trigger() {
