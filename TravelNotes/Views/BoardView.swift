@@ -508,15 +508,26 @@ struct BoardView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 VStack(spacing: 0) {
-                    Text(t.effectiveDepart)
-                        .font(.system(size: 15, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundColor(delayed > 0 ? Self.ledRed : Self.ledAmber)
-                    if let actual = t.actualDepart, actual != t.scheduledDepart {
-                        Text("计划 \(t.scheduledDepart)")
+                    if t.effectiveDepart == "--:--" {
+                        // 开点未公布:按到点占位显示(排序同样用),别让这班车沉底消失
+                        Text((t.scheduledArrive.isEmpty || t.scheduledArrive == "----") ? "--:--" : t.scheduledArrive)
+                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundColor(.white.opacity(0.45))
+                        Text("开点待公布")
                             .font(.system(size: 8))
-                            .strikethrough()
                             .foregroundColor(.white.opacity(0.35))
+                    } else {
+                        Text(t.effectiveDepart)
+                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundColor(delayed > 0 ? Self.ledRed : Self.ledAmber)
+                        if let actual = t.actualDepart, actual != t.scheduledDepart {
+                            Text("计划 \(t.scheduledDepart)")
+                                .font(.system(size: 8))
+                                .strikethrough()
+                                .foregroundColor(.white.opacity(0.35))
+                        }
                     }
                 }
                 .frame(width: 52, alignment: .trailing)
@@ -527,7 +538,7 @@ struct BoardView: View {
                     .multilineTextAlignment(.trailing)
                     .frame(width: 72, alignment: .trailing)
                     .padding(.horizontal, 4)
-                statusLED(stop, gone: gone)
+                statusLED(t, stop, gone: gone)
                     .frame(width: 66, alignment: .trailing)
                 Text(t.platform ?? "--")
                     .font(.system(size: 13, weight: .heavy, design: .rounded))
@@ -563,19 +574,33 @@ struct BoardView: View {
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
+    /// 接口没给检票状态时按发车临近度推导:开车前约 10 分钟开始检票、5 分钟停止检票。
+    /// 小站/过路车接口经常不给状态,不推导的话现场已经在检票,App 还是一片 "--"
+    private func derivedStatus(_ train: BigScreenTrain, nowMin: Int) -> String? {
+        guard !train.terminating, let m = Self.minuteOfDay(train.effectiveDepart) else { return nil }
+        switch m - nowMin {
+        case 0...5: return "停止检票"
+        case 6...10: return "正在检票"
+        case 11...45: return "候车"
+        default: return nil
+        }
+    }
+
     @ViewBuilder
-    private func statusLED(_ stop: TrainLiveStop?, gone: Bool) -> some View {
+    private func statusLED(_ train: BigScreenTrain, _ stop: TrainLiveStop?, gone: Bool) -> some View {
         if gone {
             Text("已发车")
                 .font(.system(size: 11, weight: .bold))
                 .foregroundColor(.white.opacity(0.3))
-        } else if let state = stop?.checkStateText {
+        } else if let state = stop?.checkStateText ?? derivedStatus(train, nowMin: Self.minutesNow()) {
             let boarding = state == "正在检票"
+            let stopping = state == "停止检票"
             HStack(spacing: 3) {
                 if boarding { PulseDot() }
                 Text(state)
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(boarding ? Theme.routeGreen : .white.opacity(0.75))
+                    .foregroundColor(stopping ? Self.ledRed
+                                     : (boarding ? Theme.routeGreen : .white.opacity(0.75)))
             }
         } else {
             Text("--")
@@ -637,14 +662,21 @@ struct BoardView: View {
         }
     }
 
+    /// 排序/分桶用时刻:出发方向取开点;开点未公布(临客/晚点未定)退到到点占位,不然沉底等于丢列
+    private static func sortTime(_ t: BigScreenTrain, segment: Int) -> String {
+        let primary = segment == 1 ? t.scheduledArrive : t.effectiveDepart
+        if !primary.isEmpty, primary != "----", primary != "--:--" { return primary }
+        let fallback = segment == 1 ? t.effectiveDepart : t.scheduledArrive
+        return (fallback.isEmpty || fallback == "----" || fallback == "--:--") ? "99:99" : fallback
+    }
+
     private func key(for t: BigScreenTrain) -> String {
-        let raw = segment == 1 ? t.scheduledArrive : t.effectiveDepart
-        return (raw.isEmpty || raw == "----") ? "99" : String(raw.prefix(2))
+        let raw = Self.sortTime(t, segment: segment)
+        return raw == "99:99" ? "99" : String(raw.prefix(2))
     }
 
     private static func sortKey(_ t: BigScreenTrain, segment: Int) -> String {
-        let raw = segment == 1 ? t.scheduledArrive : t.effectiveDepart
-        return raw.isEmpty || raw == "----" ? "99:99" : raw
+        sortTime(t, segment: segment)
     }
 
     /// 今天的车已开出(按实际开点估,晚点数据未知时按计划)
@@ -730,15 +762,25 @@ struct BoardView: View {
         return HStack(spacing: 0) {
             // 左截:时刻 + 站台
             VStack(alignment: .leading, spacing: 3) {
-                Text(t.effectiveDepart)
-                    .font(.system(size: 23, weight: .heavy, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundColor(delayed > 0 ? Theme.railRed : Theme.ticketInk)
-                if let actual = t.actualDepart, actual != t.scheduledDepart {
-                    Text("计划 \(t.scheduledDepart)")
-                        .font(.system(size: 9))
-                        .strikethrough()
+                if t.effectiveDepart == "--:--" {
+                    Text((t.scheduledArrive.isEmpty || t.scheduledArrive == "----") ? "--:--" : t.scheduledArrive)
+                        .font(.system(size: 23, weight: .heavy, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundColor(Theme.ticketGray.opacity(0.7))
+                    Text("到点 · 开点待公布")
+                        .font(.system(size: 9, weight: .bold))
                         .foregroundColor(Theme.ticketGray)
+                } else {
+                    Text(t.effectiveDepart)
+                        .font(.system(size: 23, weight: .heavy, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundColor(delayed > 0 ? Theme.railRed : Theme.ticketInk)
+                    if let actual = t.actualDepart, actual != t.scheduledDepart {
+                        Text("计划 \(t.scheduledDepart)")
+                            .font(.system(size: 9))
+                            .strikethrough()
+                            .foregroundColor(Theme.ticketGray)
+                    }
                 }
                 if delayed > 0 {
                     Text("晚点 \(delayed) 分")
@@ -770,7 +812,7 @@ struct BoardView: View {
                         .font(.system(size: 16, weight: .heavy, design: .rounded))
                         .foregroundColor(Theme.ticketInk)
                     Spacer(minLength: 6)
-                    statusBadge(stop, gone: gone)
+                    statusBadge(t, stop, gone: gone)
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text(t.terminating ? "来自" : "开往")
@@ -808,7 +850,7 @@ struct BoardView: View {
     }
 
     @ViewBuilder
-    private func statusBadge(_ stop: TrainLiveStop?, gone: Bool) -> some View {
+    private func statusBadge(_ train: BigScreenTrain, _ stop: TrainLiveStop?, gone: Bool) -> some View {
         if gone {
             // 已开出:不显示可能过期的实时状态,统一标已发车
             Text("已发车")
@@ -816,16 +858,17 @@ struct BoardView: View {
                 .foregroundColor(Theme.ticketGray)
                 .padding(.horizontal, 8).padding(.vertical, 4)
                 .background(Capsule().fill(Theme.ticketGray.opacity(0.10)))
-        } else if let state = stop?.checkStateText {
+        } else if let state = stop?.checkStateText ?? derivedStatus(train, nowMin: Self.minutesNow()) {
             let boarding = state == "正在检票"
+            let stopping = state == "停止检票"
+            let tint: Color = stopping ? Theme.railRed : (boarding ? Theme.routeGreen : Theme.ticketGray)
             HStack(spacing: 4) {
                 if boarding { PulseDot() }
                 Text(state).font(.system(size: 10, weight: .bold))
             }
-            .foregroundColor(boarding ? Theme.routeGreen : Theme.ticketGray)
+            .foregroundColor(tint)
             .padding(.horizontal, 8).padding(.vertical, 4)
-            .background(Capsule().fill(boarding ? Theme.routeGreen.opacity(0.14)
-                                                : Theme.ticketGray.opacity(0.10)))
+            .background(Capsule().fill(tint.opacity(0.12)))
         }
     }
 }

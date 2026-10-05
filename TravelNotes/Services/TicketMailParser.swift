@@ -335,27 +335,22 @@ enum TicketMailParser {
         return best
     }
 
-    /// 站名词扫描:内置站名表逐一查找;同一位置只保留最长匹配(上海虹桥 优先于 上海)
+    /// 站名词扫描:站名表 3400+ 站,逐站对全文做子串搜索在全量同步(几千封)下太慢,
+    /// 合并成一条 alternation 正则一次扫描;长名在前,同一位置天然保留最长匹配(上海虹桥 优先于 上海)
+    private static let stationScanRegex: NSRegularExpression? = {
+        let names = StationDirectory.shared.stations.map(\.n).sorted { $0.count > $1.count }
+        guard !names.isEmpty else { return nil }
+        let alternation = names.map { NSRegularExpression.escapedPattern(for: $0) }.joined(separator: "|")
+        return try? NSRegularExpression(pattern: alternation)
+    }()
+
     private static func findStations(in text: String) -> [Hit] {
-        var all: [Hit] = []
-        for station in StationDirectory.shared.stations {
-            var searchStart = text.startIndex
-            while let range = text.range(of: station.n, range: searchStart..<text.endIndex) {
-                all.append(Hit(range: range, text: station.n))
-                searchStart = range.upperBound
-            }
-        }
-        all.sort {
-            $0.range.lowerBound == $1.range.lowerBound
-                ? $0.text.count > $1.text.count
-                : $0.range.lowerBound < $1.range.lowerBound
-        }
+        guard let regex = stationScanRegex else { return [] }
         var hits: [Hit] = []
-        var previous: String.Index?
-        for hit in all {
-            if let p = previous, hit.range.lowerBound == p { continue }
-            hits.append(hit)
-            previous = hit.range.lowerBound
+        let full = NSRange(text.startIndex..., in: text)
+        regex.enumerateMatches(in: text, range: full) { match, _, _ in
+            guard let match, let range = Range(match.range, in: text) else { return }
+            hits.append(Hit(range: range, text: String(text[range])))
         }
         return hits
     }

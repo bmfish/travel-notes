@@ -168,10 +168,22 @@ final class MailSyncEngine: ObservableObject {
             let ownerSetting = UserDefaults.standard.string(forKey: "mail.owner")
             let owner = (ownerSetting?.isEmpty == false) ? ownerSetting : nil
 
+            // 同一封邮件在退票/改签/建候选各阶段都要解析,正则很重(3400+ 站名表),
+            // 全量同步几千封时按 folder|uid 缓存,一封只解一次
+            var parsedByMail: [String: [TicketMailParser.ParsedTicket]] = [:]
+            func parsed(_ mail: FetchedMail) -> [TicketMailParser.ParsedTicket] {
+                let key = "\(mail.folder)|\(mail.uid)"
+                if let hit = parsedByMail[key] { return hit }
+                let tickets = TicketMailParser.parse(subject: mail.subject, bodyText: mail.bodyText,
+                                                     owner: owner, mailDate: mail.mailDate)
+                parsedByMail[key] = tickets
+                return tickets
+            }
+
             // 阶段二:退票/退单邮件 → 已退票行程集合
             var refundKeys = Set<String>()
             for mail in mails where mail.isRefund {
-                for ticket in TicketMailParser.parse(subject: mail.subject, bodyText: mail.bodyText, owner: owner, mailDate: mail.mailDate) {
+                for ticket in parsed(mail) {
                     refundKeys.insert(Self.tripKey(trainNo: ticket.trainNo, from: ticket.fromStation,
                                                    to: ticket.toStation, date: ticket.date))
                 }
@@ -187,7 +199,7 @@ final class MailSyncEngine: ObservableObject {
             }
             var changeValidKeys = Set<String>()
             for (order, mail) in lastChangeByOrder {
-                for ticket in TicketMailParser.parse(subject: mail.subject, bodyText: mail.bodyText, owner: owner, mailDate: mail.mailDate) {
+                for ticket in parsed(mail) {
                     changeValidKeys.insert(Self.tripKey(trainNo: ticket.trainNo, from: ticket.fromStation,
                                                         to: ticket.toStation, date: ticket.date))
                 }
@@ -196,7 +208,7 @@ final class MailSyncEngine: ObservableObject {
             for mail in mails where !mail.isChange && !mail.isRefund {
                 // 该订单后来改签过,这封邮件描述的是改签前的原票 → 作废
                 guard let order = mail.orderNumber, lastChangeByOrder[order] != nil else { continue }
-                for ticket in TicketMailParser.parse(subject: mail.subject, bodyText: mail.bodyText, owner: owner, mailDate: mail.mailDate) {
+                for ticket in parsed(mail) {
                     invalidatedKeys.insert(Self.tripKey(trainNo: ticket.trainNo, from: ticket.fromStation,
                                                         to: ticket.toStation, date: ticket.date))
                 }
@@ -213,7 +225,7 @@ final class MailSyncEngine: ObservableObject {
                     // 同订单多次改签,只有最后一次的新票有效
                     guard let order = mail.orderNumber, lastChangeByOrder[order]?.uid == mail.uid else { continue }
                 }
-                let tickets = TicketMailParser.parse(subject: mail.subject, bodyText: mail.bodyText, owner: owner, mailDate: mail.mailDate)
+                let tickets = parsed(mail)
                 if tickets.isEmpty { noTicketMails += 1 }
                 for ticket in tickets {
                     let tripKey = Self.tripKey(trainNo: ticket.trainNo, from: ticket.fromStation,
