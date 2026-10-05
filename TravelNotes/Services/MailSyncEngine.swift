@@ -241,7 +241,16 @@ final class MailSyncEngine: ObservableObject {
                 try? context.save()
             }
             markSynced()
-            var done = newCount > 0 ? "同步完成,新增 \(newCount) 条待确认票根" : "同步完成,没有新的候选票根"
+            // 自动导入要素齐全的候选(车次/区间/日期),残缺的留在待确认里人工补
+            let autoImported = Self.importAllCandidates(context: context, completeOnly: true)
+            var done: String
+            if newCount == 0 {
+                done = autoImported > 0 ? "同步完成,自动导入 \(autoImported) 条待确认票根" : "同步完成,没有新的候选票根"
+            } else if autoImported >= newCount {
+                done = "同步完成,新增并自动导入 \(autoImported) 条票根"
+            } else {
+                done = "同步完成,新增 \(newCount) 条,自动导入 \(autoImported) 条,余下待确认"
+            }
             if noTicketMails > 0 {
                 // 多为替他人代买的车票(只保留本人票),提示用户这批邮件没被丢弃于无形
                 done += ",\(noTicketMails) 封邮件未识别出本人票根"
@@ -485,11 +494,20 @@ final class MailSyncEngine: ObservableObject {
 
     /// 批量导入:所有未导入候选按解析结果直接建票根,返回导入数量
     @MainActor
-    static func importAllCandidates(context: ModelContext) -> Int {
+    /// 把待确认候选直接入库。completeOnly = true 时只导要素齐全(车次/区间/日期)的候选,
+    /// 自动同步用它防启发式解析的残缺数据悄悄入库,残缺的留在待确认里人工补充
+    static func importAllCandidates(context: ModelContext, completeOnly: Bool = false) -> Int {
         let descriptor = FetchDescriptor<MailCandidate>()
         let pending = ((try? context.fetch(descriptor)) ?? []).filter { !$0.imported }
         var count = 0
         for candidate in pending {
+            if completeOnly {
+                let complete = candidate.trainNo?.isEmpty == false
+                    && candidate.fromStation?.isEmpty == false
+                    && candidate.toStation?.isEmpty == false
+                    && candidate.date != nil
+                guard complete else { continue }
+            }
             var departTime: Date?
             if let timeText = candidate.departTimeText {
                 let parts = timeText.split(separator: ":").compactMap { Int($0) }
