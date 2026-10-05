@@ -397,13 +397,13 @@ private struct UpcomingTripCard: View {
                              text: "站台 \(platform)",
                              tint: Theme.railBlueDeep)
                 }
-                if isToday {
-                    if let liveInfo {
-                        let delay = liveInfo.maxDelay
-                        liveChip(icon: delay > 0 ? "clock.badge.exclamationmark" : "checkmark.circle",
-                                 text: delay > 0 ? "晚点 \(delay) 分" : "正点",
-                                 tint: delay > 0 ? Theme.railRed : Theme.routeGreen)
-                    }
+                if isToday, let liveInfo, checkStatus != "已发车" {
+                    // 晚点只看上车站:maxDelay 取全列最大,而接口对已过站的晚点当天不清零,
+                    // 前序站追回的晚点会被一直端着;发车后芯片隐藏,检票状态的"已发车"顶上
+                    let delay = liveInfo.stop(at: entry.fromStation)?.delayMinutes ?? 0
+                    liveChip(icon: delay > 0 ? "clock.badge.exclamationmark" : "checkmark.circle",
+                             text: delay > 0 ? "晚点 \(delay) 分" : "正点",
+                             tint: delay > 0 ? Theme.railRed : Theme.routeGreen)
                 }
                 Spacer()
             }

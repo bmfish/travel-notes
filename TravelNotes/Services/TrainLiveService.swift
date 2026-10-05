@@ -98,12 +98,14 @@ final class TrainLiveService {
     private let cacheTTL: TimeInterval = 300
     private let queue = DispatchQueue(label: "rail.trainLive")
 
-    /// 查询车次当日运行信息;仅出行当日有检票口/晚点数据
+    /// 查询车次当日运行信息;仅出行当日有检票口/晚点数据。
+    /// 今天的车次不走缓存:检票状态在开车前后随时翻转,读缓存等于白看
     func live(trainCode: String, date: Date) async throws -> TrainLiveInfo {
         let code = trainCode.trimmingCharacters(in: .whitespaces).uppercased()
         let day = Self.dayFormatter.string(from: date)
         let key = "\(code)|\(day)"
-        if let hit = queue.sync(execute: { cache[key] }),
+        let isToday = Calendar.current.isDateInToday(date)
+        if !isToday, let hit = queue.sync(execute: { cache[key] }),
            Date().timeIntervalSince(hit.at) < cacheTTL {
             return patchGates(hit.info, code: code, day: day)
         }
@@ -115,16 +117,17 @@ final class TrainLiveService {
         request.httpBody = Data()
         let (data, _) = try await session.data(for: request)
         let info = try Self.parse(data: data, trainCode: code, date: date)
-        if !info.stops.isEmpty {
+        if !info.stops.isEmpty, !isToday {
             queue.sync { cache[key] = (info, Date()) }
         }
         pinGates(info, code: code, day: day)
         return patchGates(info, code: code, day: day)
     }
 
-    /// 已公布的检票口记住到当天结束
+    /// 已公布的检票口记住一段时间:压接口偶发的 "--";不钉到当天结束,
+    /// 车站改签重排检票口时次日之前都看不见新值
     private func pinGates(_ info: TrainLiveInfo, code: String, day: String) {
-        let until = Date().addingTimeInterval(Self.secondsUntilDayEnd())
+        let until = Date().addingTimeInterval(min(1800, Self.secondsUntilDayEnd()))
         queue.sync {
             for s in info.stops where s.gateDisplay != nil {
                 gateOfDay["\(code)|\(day)|\(s.stationName)"] = (s.wicket, until)
@@ -164,15 +167,17 @@ final class TrainLiveService {
 
     /// 预计检票口:12306 出发当天才公布检票口,但同一辆车基本固定站台固定口。
     /// 优先用这趟车自己今天的实测值;今天没开行/站台变了,再借同站台邻车的实测值。
+    /// 当天的行程不走预计缓存:检票口随时公布/改排,进详情页要的是实时
     func estimatedGate(trainCode: String, date: Date, station: String) async -> String? {
         let code = trainCode.trimmingCharacters(in: .whitespaces).uppercased()
         let day = Self.dayFormatter.string(from: date)
         let key = "est|\(code)|\(day)|\(station)"
-        if let hit = queue.sync(execute: { estCache[key] }), Date() < hit.until {
+        let isToday = Calendar.current.isDateInToday(date)
+        if !isToday, let hit = queue.sync(execute: { estCache[key] }), Date() < hit.until {
             return hit.value
         }
         let result = try? await computeEstimatedGate(code: code, day: day, station: station)
-        if let result {
+        if let result, !isToday {
             queue.sync { estCache[key] = (result, Date().addingTimeInterval(Self.secondsUntilDayEnd())) }
         }
         return result
@@ -186,34 +191,37 @@ final class TrainLiveService {
            let gate = info.stop(at: station)?.gateDisplay {
             ownTodayGate = gate
         }
-        if let tele = try await TrainScheduleService.shared.telecode(for: station) {
-            let rowsFuture = try await boardRows(stationCode: tele, day: day)
-            let myRaw = rowsFuture.first {
-                ($0["station_train_code"] as? String) == code && ($0["station_train_date"] as? String) == day
+        guard let tele = try await TrainScheduleService.shared.telecode(for: station) else {
+            return ownTodayGate
+        }
+        // 今天的大屏不走缓存后,同一次推导里只拉一份,避免 day==today 时重复请求
+        let todayRows = try await boardRows(stationCode: tele, day: today)
+        let rowsFuture = day == today ? todayRows : try await boardRows(stationCode: tele, day: day)
+        let myRaw = rowsFuture.first {
+            ($0["station_train_code"] as? String) == code && ($0["station_train_date"] as? String) == day
+        }?["platform_no"] as? String
+        if let ownTodayGate {
+            let ownRawToday = todayRows.first {
+                ($0["station_train_code"] as? String) == code
             }?["platform_no"] as? String
-            if let ownTodayGate {
-                let ownRawToday = try await boardRows(stationCode: tele, day: today).first {
-                    ($0["station_train_code"] as? String) == code
-                }?["platform_no"] as? String
-                if myRaw == nil || ownRawToday == nil || ownRawToday == myRaw {
-                    return ownTodayGate
-                }
+            if myRaw == nil || ownRawToday == nil || ownRawToday == myRaw {
+                return ownTodayGate
             }
-            if let myRaw, !myRaw.isEmpty {
-                // 出行日站台与今天不同:按出行日计划站台,借今天同站台邻车的实测检票口
-                let mySides = Set(Self.sides(of: myRaw))
-                var best: (train: String, score: Int)?
-                for r in try await boardRows(stationCode: tele, day: today) {
-                    guard let c = r["station_train_code"] as? String, c != code,
-                          let p = r["platform_no"] as? String, !p.isEmpty else { continue }
-                    let s = Set(Self.sides(of: p))
-                    let score = p == myRaw ? 3 : (s == mySides ? 2 : (s.isDisjoint(with: mySides) ? 0 : 1))
-                    if score > (best?.score ?? 0) { best = (c, score) }
-                }
-                if let best, let info = try? await live(trainCode: best.train, date: Date()),
-                   let gate = info.stop(at: station)?.gateDisplay {
-                    return gate
-                }
+        }
+        if let myRaw, !myRaw.isEmpty {
+            // 出行日站台与今天不同:按出行日计划站台,借今天同站台邻车的实测检票口
+            let mySides = Set(Self.sides(of: myRaw))
+            var best: (train: String, score: Int)?
+            for r in todayRows {
+                guard let c = r["station_train_code"] as? String, c != code,
+                      let p = r["platform_no"] as? String, !p.isEmpty else { continue }
+                let s = Set(Self.sides(of: p))
+                let score = p == myRaw ? 3 : (s == mySides ? 2 : (s.isDisjoint(with: mySides) ? 0 : 1))
+                if score > (best?.score ?? 0) { best = (c, score) }
+            }
+            if let best, let info = try? await live(trainCode: best.train, date: Date()),
+               let gate = info.stop(at: station)?.gateDisplay {
+                return gate
             }
         }
         return ownTodayGate
@@ -291,7 +299,9 @@ final class TrainLiveService {
 
     private func boardRows(stationCode: String, day: String, force: Bool = false) async throws -> [[String: Any]] {
         let key = "\(stationCode)|\(day)"
-        if !force, let hit = queue.sync(execute: { boardCache[key] }),
+        // 今天的大屏不走缓存:站台/预计开点/检票状态都在变,历史日期才缓存
+        let isToday = day == Self.dayFormatter.string(from: Date())
+        if !force, !isToday, let hit = queue.sync(execute: { boardCache[key] }),
            Date().timeIntervalSince(hit.at) < cacheTTL {
             return hit.rows
         }
@@ -305,7 +315,9 @@ final class TrainLiveService {
               let rows = obj["data"] as? [[String: Any]] else {
             throw TrainLiveError.badResponse
         }
-        queue.sync { boardCache[key] = (rows, Date()) }
+        if !isToday {
+            queue.sync { boardCache[key] = (rows, Date()) }
+        }
         return rows
     }
 

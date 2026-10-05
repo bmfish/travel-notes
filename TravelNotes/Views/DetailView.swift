@@ -416,8 +416,10 @@ private struct LiveInfoCard: View {
                      text: "站台 \(platform)",
                      tint: Theme.railBlueDeep)
             }
-            if isToday, let liveInfo {
-                let delay = liveInfo.maxDelay
+            if isToday, let liveInfo, checkStatus != "已发车" {
+                // 晚点只看上车站(全列最大会把前序站已追回的晚点一直端着,接口对已过站不清零);
+                // 发车后芯片隐藏,检票状态的"已发车"顶上
+                let delay = liveInfo.stop(at: entry.fromStation)?.delayMinutes ?? 0
                 chip(icon: delay > 0 ? "clock.badge.exclamationmark" : "checkmark.circle",
                      text: delay > 0 ? "晚点 \(delay) 分" : "正点",
                      tint: delay > 0 ? Theme.railRed : Theme.routeGreen)

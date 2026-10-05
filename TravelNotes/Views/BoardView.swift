@@ -684,7 +684,10 @@ struct BoardView: View {
         }
     }
 
-    /// 只为今天临近发车的车拉实时状态(检票口/检票状态/晚点),别把全天几百趟都拉一遍
+    /// 只为今天临近发车的车拉实时状态(检票口/检票状态/晚点)。
+    /// 检票口/状态没有批量接口(bigScreen 返回的 54 个字段里没有),只能一趟一次;
+    /// 窗口 120 分钟,上限 30 辆;
+    /// 已开出的车不拉:界面按时刻判"已发车",它们的实时数据显示不出来
     @MainActor
     private func fetchLive(_ list: [BigScreenTrain]) async {
         guard Calendar.current.isDateInToday(boardDay) else { return }
@@ -692,21 +695,25 @@ struct BoardView: View {
         let nowMin = Self.minutesNow()
         let upcoming = Array(list.filter { t in
             guard !t.terminating, let m = Self.minuteOfDay(t.effectiveDepart) else { return false }
-            return (-60 ..< 150).contains(m - nowMin)
-        }.prefix(36))
+            return (0 ..< 120).contains(m - nowMin)
+        }.prefix(30))
         guard !upcoming.isEmpty else { return }
 
         var fetched: [String: TrainLiveStop] = [:]
-        await withTaskGroup(of: (String, TrainLiveStop?).self) { group in
-            for t in upcoming {
-                group.addTask {
-                    let info = try? await TrainLiveService.shared.live(
-                        trainCode: t.trainCode, date: Date())
-                    return (t.id, info.flatMap { $0.stop(at: station) })
+        // 不缓存后每次轮询都是真请求,分小批并发,别一梭子全打过去
+        for start in stride(from: 0, to: upcoming.count, by: 6) {
+            let chunk = Array(upcoming[start..<min(start + 6, upcoming.count)])
+            await withTaskGroup(of: (String, TrainLiveStop?).self) { group in
+                for t in chunk {
+                    group.addTask {
+                        let info = try? await TrainLiveService.shared.live(
+                            trainCode: t.trainCode, date: Date())
+                        return (t.id, info.flatMap { $0.stop(at: station) })
+                    }
                 }
-            }
-            for await (id, stop) in group {
-                if let stop { fetched[id] = stop }
+                for await (id, stop) in group {
+                    if let stop { fetched[id] = stop }
+                }
             }
         }
         liveByID.merge(fetched) { _, new in new }
